@@ -1,0 +1,11 @@
+# Kill by port
+kill $(lsof -ti :8080) 2>/dev/null
+kill $(lsof -ti :5173) 2>/dev/null
+
+# Or kill both in one line
+kill $(lsof -ti :8080 -ti :5173) 2>/dev/null
+# Backend (from project root)
+go run ./cmd/server &
+
+# Frontend (from exotel-monitoring-frontend/)
+cd exotel-monitoring-frontend && npm run dev

@@ -1,0 +1,53 @@
+server:
+  port: 8080
+  read_timeout_seconds: 30
+  write_timeout_seconds: 30
+  idle_timeout_seconds: 60
+
+mysql:
+  host: localhost
+  port: 3306
+  username: root
+  password: ""  # Empty by default on macOS with Homebrew
+  database: exotel_monitoring
+  max_open_conns: 100
+  max_idle_conns: 20
+  conn_max_lifetime_hours: 1
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 20
+
+scheduler:
+  worker_pool_size: 20
+  poll_interval_seconds: 60
+
+slack:
+  webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  enabled: false
+
+email:
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  from: "monitoring@yourcompany.com"
+  password: ""
+  enabled: false
+
+crypto:
+  # Generate with: openssl rand -base64 32
+  # This is a 32-byte base64-encoded AES-256 key for encrypting API tokens
+  secret_key: "CHANGE_ME_RUN_openssl_rand_base64_32=="
+
+alerts:
+  high_latency_threshold_ms: 3000
+  max_retries: 3
+  retry_base_delay_ms: 1000
+  retry_max_delay_ms: 30000
+
+exotel:
+  base_url: "https://api.exotel.com"
+  heartbeat_url: "https://my.exotel.com/heartbeat"
+  timeout_seconds: 30

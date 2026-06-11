@@ -1,0 +1,63 @@
+# Binaries
+server
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+.cache/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependencies
+vendor/
+
+# Local configuration
+configs/config.yaml.local
+configs/config.local.yaml
+
+# Environment files
+.env
+.env.local
+
+# Build output
+bin/
+out/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+.nfs*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Test coverage
+*.cover
+coverage.txt
+
+# Logs
+*.log
+
+# Generated files
+*.pb.go
+
+# Frontend — Node.js / Vite
+node_modules/
+exotel-monitoring-frontend/node_modules/
+exotel-monitoring-frontend/dist/
+exotel-monitoring-frontend/.env.local
+exotel-monitoring-frontend/.env.production
