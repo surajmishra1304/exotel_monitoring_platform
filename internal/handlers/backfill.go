@@ -353,161 +353,171 @@ func BulkBackfill(c *gin.Context) {
 	go func() {
 		ist := time.FixedZone("IST", 5*60*60+30*60)
 
-		for _, ep := range exophones {
-			acc, err := repository.GetAccountByID(ep.AccountID)
-			if err != nil {
-				for _, d := range body.Dates {
-					bulk.mu.Lock()
-					bulk.Failed++
-					bulk.Done++
-					bulk.Results = append(bulk.Results, bulkResult{
-						ExophoneID:     ep.ID,
-						ExophoneNumber: ep.ExophoneNumber,
-						Date:           d,
-						Status:         "error",
-						Error:          "account not found",
-					})
-					bulk.mu.Unlock()
-				}
-				continue
-			}
-
-			apiKey, err := utils.Decrypt(acc.APIKey, secretKey)
-			if err != nil {
-				apiKey = acc.APIKey
-			}
-			apiToken, err := utils.Decrypt(acc.APIToken, secretKey)
-			if err != nil {
-				apiToken = acc.APIToken
-			}
-
-			skipLogs := body.SkipCallLogs || ep.SkipCallLogs == 1
-
-			for _, dateStr := range body.Dates {
-				snapDate, _ := time.Parse("2006-01-02", dateStr)
-				dayStart := time.Date(snapDate.Year(), snapDate.Month(), snapDate.Day(), 0, 0, 0, 0, ist)
-				dayEnd := time.Date(snapDate.Year(), snapDate.Month(), snapDate.Day(), 23, 59, 59, 0, ist)
-
-				result, fetchErr := exotel.FetchCalls(
-					acc.SID, acc.Subdomain, apiKey, apiToken,
-					ep.ExophoneNumber, dayStart, dayEnd,
-				)
-
-				if fetchErr != nil || result == nil || !isHTTPSuccess(result.HTTPStatus) {
-					status := 0
-					if result != nil {
-						status = result.HTTPStatus
-					}
-					errMsg := fmt.Sprintf("HTTP %d: %v", status, fetchErr)
-					bulk.mu.Lock()
-					bulk.Failed++
-					bulk.Done++
-					bulk.Results = append(bulk.Results, bulkResult{
-						ExophoneID:     ep.ID,
-						ExophoneNumber: ep.ExophoneNumber,
-						Date:           dateStr,
-						Status:         "error",
-						Error:          errMsg,
-					})
-					bulk.mu.Unlock()
-					time.Sleep(3 * time.Second)
-					continue
-				}
-
-				callsJob, jobErr := repository.GetCallsJobForExophone(ep.ID)
-				var jobID uint64
-				if jobErr == nil {
-					jobID = callsJob.ID
-				}
-
-				txnID := fmt.Sprintf("BACKFILL-%d-%s", ep.ID, dateStr)
-				now := time.Now()
-				latMs := result.LatencyMs
-				_ = repository.CreateTransaction(&models.JobTransaction{
-					TransactionID: txnID,
-					JobID:         jobID,
-					AccountID:     acc.ID,
-					ExophoneID:    ep.ID,
-					JobType:       "BACKFILL",
-					Status:        "SUCCESS",
-					StartedAt:     now,
-					CompletedAt:   &now,
-					APILatencyMs:  &latMs,
-					UpdatedBy:     "BACKFILL",
-				})
-				for _, pageRaw := range result.PageBodies {
-					_ = repository.SaveJobResponse(&models.JobResponse{
-						TransactionID: txnID,
-						ResponseType:  "CALLS",
-						HTTPStatus:    result.HTTPStatus,
-						RawResponse:   pageRaw,
-					})
-				}
-
-				var allRecords []exotel.CallRecord
-				if result.Response != nil {
-					allRecords = result.Response.Result
-				}
-
-				fakeJob := models.MonitoringJob{AccountID: acc.ID, ExophoneID: ep.ID}
-				callLogs, _, summary := metrics.ProcessCallRecords(txnID, fakeJob, ep.ExophoneNumber, allRecords)
-
-				if !skipLogs && len(callLogs) > 0 {
-					_ = repository.SaveCallLogs(callLogs)
-				}
-
-				snap := &models.CallMetricsSnapshot{
-					SnapshotDate:       snapDate,
-					AccountID:          acc.ID,
-					ExophoneID:         ep.ID,
-					TotalCalls:         summary.Total,
-					Leg1Total:          summary.Leg1Total,
-					Leg1Drops:          summary.DroppedLeg1,
-					Leg2Total:          summary.Leg2Total,
-					Leg2Drops:          summary.DroppedLeg2,
-					ConnectedCalls:     summary.Connected,
-					DroppedCalls:       summary.DroppedLeg1 + summary.DroppedLeg2,
-					FailedCalls:        summary.Failed,
-					NoAnswerCalls:      summary.NoAnswer,
-					BusyCalls:          summary.Busy,
-					CanceledCalls:      summary.Canceled,
-					OtherCalls:         summary.Other,
-					AvgDurationSec:     summary.AvgDurationSec,
-					AnswerRate:         summary.AnswerRate,
-					DropRate:           summary.DropRate,
-					Leg1DropRate:       summary.Leg1DropRate,
-					SuccessRate:        summary.SuccessRate,
-					HourlyDistribution: metrics.HourlyDistributionJSON(summary.HourlyDistribution),
-					PeakHour:           summary.PeakHour,
-					Leg1NoAnswer:       summary.Leg1NoAnswer,
-					Leg1Busy:           summary.Leg1Busy,
-					Leg1Failed:         summary.Leg1Failed,
-					Leg2NoAnswer:       summary.Leg2NoAnswer,
-					Leg2Busy:           summary.Leg2Busy,
-					Leg2Failed:         summary.Leg2Failed,
-					Leg2Canceled:       summary.Leg2Canceled,
-				}
-				_ = repository.UpsertCallMetricsSnapshot(snap)
-				_ = repository.AccumulateAccountDashboardFromSnapshots(acc.ID)
-
-				bulk.mu.Lock()
-				bulk.Done++
-				bulk.Results = append(bulk.Results, bulkResult{
-					ExophoneID:     ep.ID,
-					ExophoneNumber: ep.ExophoneNumber,
-					Date:           dateStr,
-					Status:         "done",
-					TotalCalls:     summary.Total,
-					AnswerRate:     summary.AnswerRate,
-					PagesHit:       result.PagesFetched,
-				})
-				bulk.mu.Unlock()
-
-				// Pause between pairs to avoid Exotel rate-limit (429).
-				time.Sleep(3 * time.Second)
-			}
+		// Worker pool: 3 concurrent exophone fetches to balance speed vs rate limits.
+		// Each worker processes one (exophone, date) pair at a time.
+		type task struct {
+			ep       models.Exophone
+			dateStr  string
+			skipLogs bool
 		}
 
+		taskCh := make(chan task, total)
+
+		// Pre-decrypt credentials per account to avoid repeated DB lookups.
+		type creds struct{ apiKey, apiToken string }
+		credCache := map[uint64]creds{}
+		for _, ep := range exophones {
+			if _, ok := credCache[ep.AccountID]; ok {
+				continue
+			}
+			acc, err := repository.GetAccountByID(ep.AccountID)
+			if err != nil {
+				continue
+			}
+			k, err := utils.Decrypt(acc.APIKey, secretKey)
+			if err != nil {
+				k = acc.APIKey
+			}
+			t2, err := utils.Decrypt(acc.APIToken, secretKey)
+			if err != nil {
+				t2 = acc.APIToken
+			}
+			credCache[ep.AccountID] = creds{k, t2}
+		}
+
+		// Enqueue all tasks.
+		for _, ep := range exophones {
+			sl := body.SkipCallLogs || ep.SkipCallLogs == 1
+			for _, d := range body.Dates {
+				taskCh <- task{ep: ep, dateStr: d, skipLogs: sl}
+			}
+		}
+		close(taskCh)
+
+		var wg sync.WaitGroup
+		const concurrency = 3
+		for w := 0; w < concurrency; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for t := range taskCh {
+					ep := t.ep
+					dateStr := t.dateStr
+
+					acc, err := repository.GetAccountByID(ep.AccountID)
+					if err != nil {
+						bulk.mu.Lock()
+						bulk.Failed++
+						bulk.Done++
+						bulk.Results = append(bulk.Results, bulkResult{
+							ExophoneID: ep.ID, ExophoneNumber: ep.ExophoneNumber,
+							Date: dateStr, Status: "error", Error: "account not found",
+						})
+						bulk.mu.Unlock()
+						continue
+					}
+					cr := credCache[ep.AccountID]
+
+					snapDate, _ := time.Parse("2006-01-02", dateStr)
+					dayStart := time.Date(snapDate.Year(), snapDate.Month(), snapDate.Day(), 0, 0, 0, 0, ist)
+					dayEnd := time.Date(snapDate.Year(), snapDate.Month(), snapDate.Day(), 23, 59, 59, 0, ist)
+
+					result, fetchErr := exotel.FetchCalls(
+						acc.SID, acc.Subdomain, cr.apiKey, cr.apiToken,
+						ep.ExophoneNumber, dayStart, dayEnd,
+					)
+
+					if fetchErr != nil || result == nil || !isHTTPSuccess(result.HTTPStatus) {
+						httpCode := 0
+						if result != nil {
+							httpCode = result.HTTPStatus
+						}
+						errMsg := fmt.Sprintf("HTTP %d: %v", httpCode, fetchErr)
+						// Back off on rate-limit so other workers also slow down.
+						if httpCode == 429 {
+							time.Sleep(10 * time.Second)
+						}
+						bulk.mu.Lock()
+						bulk.Failed++
+						bulk.Done++
+						bulk.Results = append(bulk.Results, bulkResult{
+							ExophoneID: ep.ID, ExophoneNumber: ep.ExophoneNumber,
+							Date: dateStr, Status: "error", Error: errMsg,
+						})
+						bulk.mu.Unlock()
+						continue
+					}
+
+					callsJob, jobErr := repository.GetCallsJobForExophone(ep.ID)
+					var jobID uint64
+					if jobErr == nil {
+						jobID = callsJob.ID
+					}
+
+					txnID := fmt.Sprintf("BACKFILL-%d-%s", ep.ID, dateStr)
+					now := time.Now()
+					latMs := result.LatencyMs
+					_ = repository.CreateTransaction(&models.JobTransaction{
+						TransactionID: txnID, JobID: jobID,
+						AccountID: acc.ID, ExophoneID: ep.ID,
+						JobType: "BACKFILL", Status: "SUCCESS",
+						StartedAt: now, CompletedAt: &now,
+						APILatencyMs: &latMs, UpdatedBy: "BACKFILL",
+					})
+					for _, pageRaw := range result.PageBodies {
+						_ = repository.SaveJobResponse(&models.JobResponse{
+							TransactionID: txnID, ResponseType: "CALLS",
+							HTTPStatus: result.HTTPStatus, RawResponse: pageRaw,
+						})
+					}
+
+					var allRecords []exotel.CallRecord
+					if result.Response != nil {
+						allRecords = result.Response.Result
+					}
+
+					fakeJob := models.MonitoringJob{AccountID: acc.ID, ExophoneID: ep.ID}
+					callLogs, _, summary := metrics.ProcessCallRecords(txnID, fakeJob, ep.ExophoneNumber, allRecords)
+
+					if !t.skipLogs && len(callLogs) > 0 {
+						_ = repository.SaveCallLogs(callLogs)
+					}
+
+					snap := &models.CallMetricsSnapshot{
+						SnapshotDate: snapDate, AccountID: acc.ID, ExophoneID: ep.ID,
+						TotalCalls: summary.Total, Leg1Total: summary.Leg1Total,
+						Leg1Drops: summary.DroppedLeg1, Leg2Total: summary.Leg2Total,
+						Leg2Drops: summary.DroppedLeg2, ConnectedCalls: summary.Connected,
+						DroppedCalls: summary.DroppedLeg1 + summary.DroppedLeg2,
+						FailedCalls: summary.Failed, NoAnswerCalls: summary.NoAnswer,
+						BusyCalls: summary.Busy, CanceledCalls: summary.Canceled,
+						OtherCalls: summary.Other, AvgDurationSec: summary.AvgDurationSec,
+						AnswerRate: summary.AnswerRate, DropRate: summary.DropRate,
+						Leg1DropRate: summary.Leg1DropRate, SuccessRate: summary.SuccessRate,
+						HourlyDistribution: metrics.HourlyDistributionJSON(summary.HourlyDistribution),
+						PeakHour: summary.PeakHour,
+						Leg1NoAnswer: summary.Leg1NoAnswer, Leg1Busy: summary.Leg1Busy,
+						Leg1Failed: summary.Leg1Failed, Leg2NoAnswer: summary.Leg2NoAnswer,
+						Leg2Busy: summary.Leg2Busy, Leg2Failed: summary.Leg2Failed,
+						Leg2Canceled: summary.Leg2Canceled,
+					}
+					_ = repository.UpsertCallMetricsSnapshot(snap)
+					_ = repository.AccumulateAccountDashboardFromSnapshots(acc.ID)
+
+					bulk.mu.Lock()
+					bulk.Done++
+					bulk.Results = append(bulk.Results, bulkResult{
+						ExophoneID: ep.ID, ExophoneNumber: ep.ExophoneNumber,
+						Date: dateStr, Status: "done",
+						TotalCalls: summary.Total, AnswerRate: summary.AnswerRate,
+						PagesHit: result.PagesFetched,
+					})
+					bulk.mu.Unlock()
+				}
+			}()
+		}
+
+		wg.Wait()
 		bulk.mu.Lock()
 		bulk.Running = false
 		bulk.mu.Unlock()
