@@ -12,6 +12,7 @@ import (
 	"exotel-monitoring-platform/internal/models"
 	"exotel-monitoring-platform/internal/repository"
 	"exotel-monitoring-platform/internal/utils"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -41,14 +42,14 @@ var bulk = &bulkBackfillState{}
 
 // backfillJob tracks the progress of an async backfill run.
 type backfillJob struct {
-	ExophoneID  uint64
-	Date        string
-	Status      string // "running" | "done" | "error"
-	Error       string
-	TotalCalls  int
-	AnswerRate  float64
-	PagesHit    int
-	FinishedAt  *time.Time
+	ExophoneID uint64
+	Date       string
+	Status     string // "running" | "done" | "error"
+	Error      string
+	TotalCalls int
+	AnswerRate float64
+	PagesHit   int
+	FinishedAt *time.Time
 }
 
 var (
@@ -489,14 +490,14 @@ func BulkBackfill(c *gin.Context) {
 						Leg1Drops: summary.DroppedLeg1, Leg2Total: summary.Leg2Total,
 						Leg2Drops: summary.DroppedLeg2, ConnectedCalls: summary.Connected,
 						DroppedCalls: summary.DroppedLeg1 + summary.DroppedLeg2,
-						FailedCalls: summary.Failed, NoAnswerCalls: summary.NoAnswer,
+						FailedCalls:  summary.Failed, NoAnswerCalls: summary.NoAnswer,
 						BusyCalls: summary.Busy, CanceledCalls: summary.Canceled,
 						OtherCalls: summary.Other, AvgDurationSec: summary.AvgDurationSec,
 						AnswerRate: summary.AnswerRate, DropRate: summary.DropRate,
 						Leg1DropRate: summary.Leg1DropRate, SuccessRate: summary.SuccessRate,
 						HourlyDistribution: metrics.HourlyDistributionJSON(summary.HourlyDistribution),
-						PeakHour: summary.PeakHour,
-						Leg1NoAnswer: summary.Leg1NoAnswer, Leg1Busy: summary.Leg1Busy,
+						PeakHour:           summary.PeakHour,
+						Leg1NoAnswer:       summary.Leg1NoAnswer, Leg1Busy: summary.Leg1Busy,
 						Leg1Failed: summary.Leg1Failed, Leg2NoAnswer: summary.Leg2NoAnswer,
 						Leg2Busy: summary.Leg2Busy, Leg2Failed: summary.Leg2Failed,
 						Leg2Canceled: summary.Leg2Canceled,
