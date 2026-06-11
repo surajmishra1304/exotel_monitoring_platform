@@ -13,6 +13,7 @@ type HeartbeatMetric struct {
 	ID               uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	TransactionID    string    `gorm:"column:transaction_id;not null;index" json:"transaction_id"`
 	AccountID        uint64    `gorm:"column:account_id;not null;index" json:"account_id"`
+	ExophoneID       uint64    `gorm:"column:exophone_id;default:0;index" json:"exophone_id"`
 	StatusType       string    `gorm:"column:status_type;not null" json:"status_type"`
 	IncomingAffected int       `gorm:"column:incoming_affected;default:0" json:"incoming_affected"`
 	OutgoingAffected int       `gorm:"column:outgoing_affected;default:0" json:"outgoing_affected"`

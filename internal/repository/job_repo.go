@@ -39,3 +39,12 @@ func GetJobByID(id uint64) (*models.MonitoringJob, error) {
 	result := database.DB.Where("id = ?", id).First(&j)
 	return &j, result.Error
 }
+
+// GetCallsJobForExophone returns the CALLS monitoring job for an exophone.
+func GetCallsJobForExophone(exophoneID uint64) (*models.MonitoringJob, error) {
+	var j models.MonitoringJob
+	result := database.DB.
+		Where("exophone_id = ? AND job_type = 'CALLS'", exophoneID).
+		First(&j)
+	return &j, result.Error
+}

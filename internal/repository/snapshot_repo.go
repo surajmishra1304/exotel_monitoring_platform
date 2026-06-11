@@ -18,8 +18,11 @@ func UpsertCallMetricsSnapshot(s *models.CallMetricsSnapshot) error {
 			 connected_calls, dropped_calls,
 			 failed_calls, no_answer_calls, busy_calls, canceled_calls, other_calls,
 			 avg_duration_sec, answer_rate, drop_rate, leg1_drop_rate, success_rate,
-			 hourly_distribution, peak_hour, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+			 hourly_distribution, peak_hour,
+			 leg1_no_answer, leg1_busy, leg1_failed,
+			 leg2_no_answer, leg2_busy, leg2_failed, leg2_canceled,
+			 created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE
 			total_calls         = VALUES(total_calls),
 			leg1_total          = VALUES(leg1_total),
@@ -40,6 +43,13 @@ func UpsertCallMetricsSnapshot(s *models.CallMetricsSnapshot) error {
 			success_rate        = VALUES(success_rate),
 			hourly_distribution = VALUES(hourly_distribution),
 			peak_hour           = VALUES(peak_hour),
+			leg1_no_answer      = VALUES(leg1_no_answer),
+			leg1_busy           = VALUES(leg1_busy),
+			leg1_failed         = VALUES(leg1_failed),
+			leg2_no_answer      = VALUES(leg2_no_answer),
+			leg2_busy           = VALUES(leg2_busy),
+			leg2_failed         = VALUES(leg2_failed),
+			leg2_canceled       = VALUES(leg2_canceled),
 			updated_at          = NOW()`,
 		s.SnapshotDate, s.AccountID, s.ExophoneID, s.TotalCalls,
 		s.Leg1Total, s.Leg1Drops,
@@ -48,6 +58,8 @@ func UpsertCallMetricsSnapshot(s *models.CallMetricsSnapshot) error {
 		s.FailedCalls, s.NoAnswerCalls, s.BusyCalls, s.CanceledCalls, s.OtherCalls,
 		s.AvgDurationSec, s.AnswerRate, s.DropRate, s.Leg1DropRate, s.SuccessRate,
 		s.HourlyDistribution, s.PeakHour,
+		s.Leg1NoAnswer, s.Leg1Busy, s.Leg1Failed,
+		s.Leg2NoAnswer, s.Leg2Busy, s.Leg2Failed, s.Leg2Canceled,
 	).Error
 }
 
@@ -420,6 +432,13 @@ type CallMetricsExportRow struct {
 	AnswerRate     float64   `gorm:"column:answer_rate"`
 	AvgDurationSec float64   `gorm:"column:avg_duration_sec"`
 	PeakHour       int       `gorm:"column:peak_hour"`
+	Leg1NoAnswer   int       `gorm:"column:leg1_no_answer"`
+	Leg1Busy       int       `gorm:"column:leg1_busy"`
+	Leg1Failed     int       `gorm:"column:leg1_failed"`
+	Leg2NoAnswer   int       `gorm:"column:leg2_no_answer"`
+	Leg2Busy       int       `gorm:"column:leg2_busy"`
+	Leg2Failed     int       `gorm:"column:leg2_failed"`
+	Leg2Canceled   int       `gorm:"column:leg2_canceled"`
 }
 
 // GetCallMetricsForExport returns snapshot rows joined with exophone numbers for CSV export.
@@ -435,7 +454,9 @@ func GetCallMetricsForExport(accountID uint64, dateStr string, exophoneID uint64
 		       cms.leg1_total, cms.leg1_drops, cms.leg1_drop_rate,
 		       cms.leg2_total, cms.leg2_drops, cms.drop_rate,
 		       cms.failed_calls, cms.no_answer_calls, cms.busy_calls, cms.canceled_calls,
-		       cms.answer_rate, cms.avg_duration_sec, cms.peak_hour
+		       cms.answer_rate, cms.avg_duration_sec, cms.peak_hour,
+		       cms.leg1_no_answer, cms.leg1_busy, cms.leg1_failed,
+		       cms.leg2_no_answer, cms.leg2_busy, cms.leg2_failed, cms.leg2_canceled
 		FROM call_metrics_snapshot cms
 		JOIN exophones e ON e.id = cms.exophone_id
 		WHERE cms.account_id = ? AND cms.snapshot_date = ?`

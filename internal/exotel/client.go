@@ -288,9 +288,29 @@ type CallRecord struct {
 }
 
 // ActiveStreamsResponse is the response from the Active Streams API.
+// Actual Exotel response shape: {"Streams":[{"ActiveStreamCount":1,"ThrottleLimit":117}]}
+type ActiveStreamsEntry struct {
+	ActiveStreamCount int `json:"ActiveStreamCount"`
+	ThrottleLimit     int `json:"ThrottleLimit"`
+}
+
 type ActiveStreamsResponse struct {
-	ActiveStreams      int    `json:"active_streams"`
-	MaxAllowedStreams  int    `json:"max_allowed_streams"`
-	AccountSid        string `json:"account_sid"`
-	Status            string `json:"status"`
+	Streams []ActiveStreamsEntry `json:"Streams"`
+}
+
+// ActiveStreams returns the total active stream count across all entries.
+func (r *ActiveStreamsResponse) ActiveStreams() int {
+	total := 0
+	for _, s := range r.Streams {
+		total += s.ActiveStreamCount
+	}
+	return total
+}
+
+// MaxAllowedStreams returns the throttle limit from the first entry (account-level cap).
+func (r *ActiveStreamsResponse) MaxAllowedStreams() int {
+	if len(r.Streams) == 0 {
+		return 0
+	}
+	return r.Streams[0].ThrottleLimit
 }

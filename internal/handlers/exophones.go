@@ -298,6 +298,45 @@ func ToggleCron(c *gin.Context) {
 	})
 }
 
+// ToggleSkipCallLogs sets skip_call_logs for a single exophone.
+// PATCH /api/v1/exophones/:id/skip-call-logs
+func ToggleSkipCallLogs(c *gin.Context) {
+	exophoneID := parseUint(c.Param("id"))
+	if exophoneID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid exophone id"})
+		return
+	}
+
+	var raw struct {
+		SkipCallLogs json.RawMessage `json:"skip_call_logs" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "skip_call_logs (0/1 or true/false) is required"})
+		return
+	}
+	var val int
+	switch string(raw.SkipCallLogs) {
+	case "1", "true":
+		val = 1
+	case "0", "false":
+		val = 0
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "skip_call_logs must be 0, 1, true, or false"})
+		return
+	}
+
+	if err := repository.SetSkipCallLogs(exophoneID, val); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"exophone_id":    exophoneID,
+		"skip_call_logs": val,
+		"message":        "skip_call_logs flag updated",
+	})
+}
+
 // ExportPerformanceCSV streams exophone call-metric snapshots for an account as CSV.
 //
 // GET /api/v1/accounts/:account_id/performance/export?date=YYYY-MM-DD&exophone_id=N
@@ -352,6 +391,8 @@ func ExportPerformanceCSV(c *gin.Context) {
 		"leg1_total", "leg1_drops", "leg1_drop_rate_%",
 		"leg2_total", "leg2_drops", "drop_rate_%",
 		"failed_calls", "no_answer_calls", "busy_calls", "canceled_calls",
+		"leg1_no_answer", "leg1_busy", "leg1_failed",
+		"leg2_no_answer", "leg2_busy", "leg2_failed", "leg2_canceled",
 		"avg_duration_sec", "peak_hour",
 	})
 
@@ -373,6 +414,13 @@ func ExportPerformanceCSV(c *gin.Context) {
 			strconv.Itoa(s.NoAnswerCalls),
 			strconv.Itoa(s.BusyCalls),
 			strconv.Itoa(s.CanceledCalls),
+			strconv.Itoa(s.Leg1NoAnswer),
+			strconv.Itoa(s.Leg1Busy),
+			strconv.Itoa(s.Leg1Failed),
+			strconv.Itoa(s.Leg2NoAnswer),
+			strconv.Itoa(s.Leg2Busy),
+			strconv.Itoa(s.Leg2Failed),
+			strconv.Itoa(s.Leg2Canceled),
 			fmt.Sprintf("%.1f", s.AvgDurationSec),
 			strconv.Itoa(s.PeakHour),
 		})

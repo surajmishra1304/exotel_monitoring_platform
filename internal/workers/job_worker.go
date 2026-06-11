@@ -292,6 +292,7 @@ func executeHeartbeat(ctx context.Context, txnID string, job models.MonitoringJo
 		_ = repository.SaveHeartbeatMetric(&models.HeartbeatMetric{
 			TransactionID:    txnID,
 			AccountID:        job.AccountID,
+			ExophoneID:       job.ExophoneID,
 			StatusType:       statusType,
 			IncomingAffected: len(hb.IncomingAffected),
 			OutgoingAffected: len(hb.OutgoingAffected),
@@ -526,23 +527,25 @@ func executeStreams(ctx context.Context, txnID string, job models.MonitoringJob,
 
 	if streamsResult != nil && streamsResult.Response != nil {
 		sr := streamsResult.Response
+		active := sr.ActiveStreams()
+		maxAllowed := sr.MaxAllowedStreams()
 		utilPct := 0.0
-		if sr.MaxAllowedStreams > 0 {
-			utilPct = float64(sr.ActiveStreams) / float64(sr.MaxAllowedStreams) * 100
+		if maxAllowed > 0 {
+			utilPct = float64(active) / float64(maxAllowed) * 100
 		}
 
 		_ = repository.SaveStreamMetric(&models.StreamMetric{
 			TransactionID:      txnID,
 			AccountID:          job.AccountID,
 			ExophoneID:         job.ExophoneID,
-			ActiveStreams:       sr.ActiveStreams,
-			MaxAllowedStreams:   sr.MaxAllowedStreams,
+			ActiveStreams:       active,
+			MaxAllowedStreams:   maxAllowed,
 			UtilizationPercent: utilPct,
 			CreatedBy:          "SYSTEM_METRICS",
 		})
 
 		// Upsert hourly stream utilization snapshot (aggregates per-hour)
-		_ = snapshots.UpdateStreamUtilizationSnapshot(job.AccountID, job.ExophoneID, sr.ActiveStreams, sr.MaxAllowedStreams, utilPct)
+		_ = snapshots.UpdateStreamUtilizationSnapshot(job.AccountID, job.ExophoneID, active, maxAllowed, utilPct)
 
 		// High utilization alert (> 90%)
 		if utilPct > 90 {
@@ -552,7 +555,7 @@ func executeStreams(ctx context.Context, txnID string, job models.MonitoringJob,
 				AccountID:     job.AccountID,
 				AlertType:     models.AlertTypeExophoneDown,
 				Severity:      models.SeverityWarning,
-				Message:       fmt.Sprintf("High stream utilization: %.1f%% (%d/%d active)", utilPct, sr.ActiveStreams, sr.MaxAllowedStreams),
+				Message:       fmt.Sprintf("High stream utilization: %.1f%% (%d/%d active)", utilPct, active, maxAllowed),
 				Channel:       models.ChannelSlack,
 			})
 		}

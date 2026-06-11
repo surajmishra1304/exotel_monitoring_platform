@@ -102,7 +102,12 @@ func ReprocessExophoneSnapshot(c *gin.Context) {
 	}
 
 	// Recompute the full summary from scratch.
-	_, _, summary := metrics.ProcessCallRecords("REPROCESS", fakeJob, exophone.ExophoneNumber, allRecords)
+	callLogs, _, summary := metrics.ProcessCallRecords("REPROCESS", fakeJob, exophone.ExophoneNumber, allRecords)
+
+	// Write call_logs when skip_call_logs is OFF so the DB reflects the reprocessed data.
+	if exophone.SkipCallLogs == 0 && len(callLogs) > 0 {
+		_ = repository.SaveCallLogs(callLogs)
+	}
 
 	// Build a clean snapshot (not accumulated — full overwrite).
 	snapDate, _ := time.Parse("2006-01-02", dateStr)

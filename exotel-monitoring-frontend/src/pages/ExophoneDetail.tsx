@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   Row, Col, Card, Typography, Space, Button, Descriptions, Popconfirm, Tag,
-  DatePicker, Alert, message,
+  DatePicker, Alert, message, Switch, Tooltip,
 } from 'antd';
 import { ArrowLeftOutlined, ReloadOutlined, ClockCircleOutlined, DownloadOutlined, SyncOutlined } from '@ant-design/icons';
 import {
-  PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -47,6 +47,8 @@ const ExophoneDetail: React.FC = () => {
 
   const [selectedDate, setSelectedDate] = useState<Dayjs | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [skipCallLogs, setSkipCallLogs] = useState<boolean | null>(null);
+  const [savingSkip, setSavingSkip] = useState(false);
   const dateStr = selectedDate ? selectedDate.format('YYYY-MM-DD') : undefined;
 
   const { data: exophone } = useExophoneById(exophoneId);
@@ -97,6 +99,32 @@ const ExophoneDetail: React.FC = () => {
       message.error('Network error during reprocess');
     } finally {
       setReprocessing(false);
+    }
+  };
+
+  // Sync skipCallLogs from fetched exophone data (once).
+  const currentSkip = exophone?.skip_call_logs === 1;
+  const effectiveSkip = skipCallLogs !== null ? skipCallLogs : currentSkip;
+
+  const handleToggleSkipCallLogs = async (checked: boolean) => {
+    setSavingSkip(true);
+    try {
+      const res = await fetch(`/api/v1/exophones/${exophoneId}/skip-call-logs`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skip_call_logs: checked ? 1 : 0 }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        message.error(body.error ?? 'Failed to update skip_call_logs');
+      } else {
+        setSkipCallLogs(checked);
+        message.success(checked ? 'Call logs will be skipped for this exophone' : 'Call logs will be written for this exophone');
+      }
+    } catch {
+      message.error('Network error');
+    } finally {
+      setSavingSkip(false);
     }
   };
 
@@ -195,6 +223,19 @@ const ExophoneDetail: React.FC = () => {
           <Button icon={<DownloadOutlined />} onClick={handleExportCSV} size="small" disabled={!accountID}>
             Export CSV
           </Button>
+          <Tooltip title={effectiveSkip ? 'Call logs are being skipped — toggle OFF to write all calls to DB' : 'Call logs are being written to DB — toggle ON to skip writing'}>
+            <Space size={4}>
+              <Switch
+                size="small"
+                checked={effectiveSkip}
+                loading={savingSkip}
+                onChange={handleToggleSkipCallLogs}
+              />
+              <Text style={{ fontSize: 11, color: effectiveSkip ? '#ff4d4f' : '#52c41a' }}>
+                {effectiveSkip ? 'Skip call logs' : 'Write call logs'}
+              </Text>
+            </Space>
+          </Tooltip>
           <Popconfirm
             title="Rebuild snapshot from raw API responses?"
             description={`Overwrites today's snapshot for ${displayNumber} with a fresh recomputation from saved job responses. Only works if job responses were saved.`}
@@ -290,7 +331,7 @@ const ExophoneDetail: React.FC = () => {
                             <Cell key={entry.name} fill={entry.color} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(v: number) => [v, 'calls']} />
+                        <RechartsTooltip formatter={(v: number) => [v, 'calls']} />
                         <Legend />
                       </PieChart>
                     </ResponsiveContainer>
@@ -397,6 +438,53 @@ const ExophoneDetail: React.FC = () => {
                         )}
                       </div>
                     )}
+
+                    {/* Leg status breakdown — from details=true Exotel API */}
+                    {(() => {
+                      const l1na = callData.leg1_no_answer ?? 0;
+                      const l1busy = callData.leg1_busy ?? 0;
+                      const l1fail = callData.leg1_failed ?? 0;
+                      const l2na = callData.leg2_no_answer ?? 0;
+                      const l2busy = callData.leg2_busy ?? 0;
+                      const l2fail = callData.leg2_failed ?? 0;
+                      const l2can = callData.leg2_canceled ?? 0;
+                      const hasLegData = l1na + l1busy + l1fail + l2na + l2busy + l2fail + l2can > 0;
+                      if (!hasLegData) return null;
+                      const total = callData.total_calls || 1;
+                      const pct = (n: number) => `${((n / total) * 100).toFixed(1)}%`;
+                      const row = (label: string, val: number, color: string) =>
+                        val > 0 ? (
+                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
+                            <Text style={{ color }}>{label}</Text>
+                            <Text type="secondary">{val} ({pct(val)})</Text>
+                          </div>
+                        ) : null;
+                      return (
+                        <div style={{ marginTop: 8, padding: '10px 12px', background: '#f6f6ff', borderRadius: 6, border: '1px solid #e8e8f0' }}>
+                          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+                            Leg Status Reasons
+                            <Text type="secondary" style={{ fontWeight: 'normal', marginLeft: 6, fontSize: 10 }}>from details=true API</Text>
+                          </Text>
+                          {(l1na > 0 || l1busy > 0 || l1fail > 0) && (
+                            <div style={{ marginBottom: 6 }}>
+                              <Text type="secondary" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>Leg 1</Text>
+                              {row('No Answer', l1na, '#faad14')}
+                              {row('Busy', l1busy, '#ff7a45')}
+                              {row('Failed', l1fail, '#ff4d4f')}
+                            </div>
+                          )}
+                          {(l2na > 0 || l2busy > 0 || l2fail > 0 || l2can > 0) && (
+                            <div>
+                              <Text type="secondary" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>Leg 2</Text>
+                              {row('No Answer', l2na, '#faad14')}
+                              {row('Busy', l2busy, '#ff7a45')}
+                              {row('Failed', l2fail, '#ff4d4f')}
+                              {row('Canceled', l2can, '#8c8c8c')}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </Col>
                 </Row>
 
@@ -411,7 +499,7 @@ const ExophoneDetail: React.FC = () => {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="hour" tick={{ fontSize: 10 }} interval={2} />
                       <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                      <Tooltip
+                      <RechartsTooltip
                         formatter={(v: number) => [v, 'calls']}
                         labelFormatter={(l) => `Hour: ${l}`}
                       />

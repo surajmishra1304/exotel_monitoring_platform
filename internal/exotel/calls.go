@@ -114,8 +114,8 @@ func FetchCalls(sid, subdomain, apiKey, apiToken, exophoneNumber string, from, t
 		if afterCursor == "" {
 			break
 		}
-		// Safety: cap at 100 pages (10 000 calls per window) to avoid runaway loops.
-		if pages >= 100 {
+		// Safety: cap at 500 pages (50 000 calls per window) to avoid runaway loops.
+		if pages >= 500 {
 			break
 		}
 	}

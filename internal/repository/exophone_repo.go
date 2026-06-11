@@ -114,6 +114,17 @@ func SetCronApplicable(exophoneID uint64, val int) error {
 	})
 }
 
+// SetSkipCallLogs updates the skip_call_logs flag for a given exophone.
+// When val=1 the call_logs table will not be written during monitoring jobs.
+func SetSkipCallLogs(exophoneID uint64, val int) error {
+	return database.DB.Model(&models.Exophone{}).
+		Where("id = ? AND is_deleted = 0", exophoneID).
+		Updates(map[string]interface{}{
+			"skip_call_logs": val,
+			"updated_by":     "API",
+		}).Error
+}
+
 // UpdateLastSynced stamps the last_synced_at field for a given exophone.
 func UpdateLastSynced(exophoneID uint64) error {
 	now := time.Now()

@@ -6,6 +6,7 @@ export interface Exophone {
   priority: 'P0' | 'P1' | 'P2' | 'P3';
   monitoring_flag: number;
   is_cron_applicable: number;
+  skip_call_logs: number;
   cache_ttl: number;
   metadata_json?: string;
   last_synced_at: string | null;

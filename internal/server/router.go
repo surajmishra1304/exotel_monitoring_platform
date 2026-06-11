@@ -47,8 +47,11 @@ func New() *http.Server {
 		api.GET("/exophones/:id/metrics", handlers.GetExophoneMetrics)
 		api.PATCH("/exophones/:id/cron", handlers.ToggleCron)
 		api.PATCH("/exophones/:id/priority", handlers.UpdatePriority)
+		api.PATCH("/exophones/:id/skip-call-logs", handlers.ToggleSkipCallLogs)
 		api.POST("/exophones/:id/heartbeat/check", handlers.CheckExophoneHeartbeat)
 		api.POST("/exophones/:id/snapshot/reprocess", handlers.ReprocessExophoneSnapshot)
+		api.POST("/exophones/:id/backfill", handlers.BackfillExophoneSnapshot)
+		api.GET("/exophones/:id/backfill/status", handlers.BackfillStatus)
 
 		// Monitoring transactions
 		api.GET("/transactions", handlers.GetTransactions)

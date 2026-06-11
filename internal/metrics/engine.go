@@ -316,14 +316,18 @@ func buildMetric(txnID string, job models.MonitoringJob, name string, value floa
 	}
 }
 
+// ist is the IST timezone (UTC+5:30).
+// Exotel timestamps without a timezone indicator are always in IST.
+var ist = time.FixedZone("IST", 5*60*60+30*60)
+
 // parseExotelTime handles the common Exotel timestamp formats.
+// The bare "YYYY-MM-DD HH:MM:SS" format has no timezone — Exotel returns IST,
+// so we parse it with ParseInLocation to avoid a 5h30m UTC offset error.
 func parseExotelTime(s string) (time.Time, error) {
-	formats := []string{
-		"2006-01-02 15:04:05",
-		time.RFC3339,
-		"Mon, 02 Jan 2006 15:04:05 -0700",
+	if t, err := time.ParseInLocation("2006-01-02 15:04:05", s, ist); err == nil {
+		return t, nil
 	}
-	for _, f := range formats {
+	for _, f := range []string{time.RFC3339, "Mon, 02 Jan 2006 15:04:05 -0700"} {
 		if t, err := time.Parse(f, s); err == nil {
 			return t, nil
 		}

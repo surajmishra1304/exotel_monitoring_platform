@@ -38,6 +38,16 @@ func GetLatestHeartbeat(accountID uint64) (*models.HeartbeatMetric, error) {
 	return &m, result.Error
 }
 
+// GetLatestHeartbeatForExophone returns the most recent heartbeat record for a specific exophone.
+func GetLatestHeartbeatForExophone(exophoneID uint64) (*models.HeartbeatMetric, error) {
+	var m models.HeartbeatMetric
+	result := database.DB.
+		Where("exophone_id = ?", exophoneID).
+		Order("created_at DESC").
+		First(&m)
+	return &m, result.Error
+}
+
 // GetLatestStreamMetric returns the most recent stream reading for an exophone.
 func GetLatestStreamMetric(exophoneID uint64) (*models.StreamMetric, error) {
 	var m models.StreamMetric

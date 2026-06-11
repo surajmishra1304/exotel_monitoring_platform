@@ -25,6 +25,14 @@ export interface CallMetricsSnapshot {
   success_rate: number;      // alias for answer_rate
   hourly_distribution: string; // JSON string: 24-element array [h0, h1, ..., h23]
   peak_hour: number;         // 0-23, hour with the most calls
+  // Per-leg status breakdown
+  leg1_no_answer: number;
+  leg1_busy: number;
+  leg1_failed: number;
+  leg2_no_answer: number;
+  leg2_busy: number;
+  leg2_failed: number;
+  leg2_canceled: number;
   created_at: string;
   updated_at: string;
 }

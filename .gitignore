@@ -1,6 +1,9 @@
 # Binaries
 server
 *.exe
+
+# PID files
+.pids/
 *.dll
 *.so
 *.dylib
