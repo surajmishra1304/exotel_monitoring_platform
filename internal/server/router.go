@@ -52,6 +52,9 @@ func New() *http.Server {
 		api.POST("/exophones/:id/snapshot/reprocess", handlers.ReprocessExophoneSnapshot)
 		api.POST("/exophones/:id/backfill", handlers.BackfillExophoneSnapshot)
 		api.GET("/exophones/:id/backfill/status", handlers.BackfillStatus)
+		api.POST("/backfill/bulk", handlers.BulkBackfill)
+		api.GET("/backfill/bulk/status", handlers.BulkBackfillStatus)
+		api.POST("/admin/truncate-metrics", handlers.TruncateMetrics)
 
 		// Monitoring transactions
 		api.GET("/transactions", handlers.GetTransactions)
