@@ -328,10 +328,17 @@ func executeCalls(ctx context.Context, txnID string, job models.MonitoringJob,
 	latencyMs *int64, retryCount *int, httpStatus *int, rawBody *string,
 	status *string, errMsg *string, log *zap.Logger) error {
 
-	// Fetch calls for the last frequency_minutes window with 1-minute overlap so
-	// boundary calls are never missed. Upsert deduplication handles any overlap.
+	// Window: from the last time this job ran (last_run_at) to now.
+	// Falls back to frequency_minutes if last_run_at is unset (first ever run).
+	// A 1-minute back-overlap on `from` ensures calls at the exact boundary are
+	// never missed; Sid-based upsert deduplication handles any duplicates.
 	to := time.Now()
-	from := to.Add(-time.Duration(job.FrequencyMinute+1) * time.Minute)
+	var from time.Time
+	if job.LastRunAt != nil {
+		from = job.LastRunAt.Add(-1 * time.Minute)
+	} else {
+		from = to.Add(-time.Duration(job.FrequencyMinute) * time.Minute)
+	}
 
 	// Resolve exophone — number for API filtering, SkipCallLogs for per-exophone write control.
 	exophoneNumber := ""
