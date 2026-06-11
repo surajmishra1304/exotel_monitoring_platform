@@ -10,6 +10,7 @@ import (
 	"exotel-monitoring-platform/internal/metrics"
 	"exotel-monitoring-platform/internal/models"
 	"exotel-monitoring-platform/internal/repository"
+	"exotel-monitoring-platform/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -52,9 +53,12 @@ func ReprocessExophoneSnapshot(c *gin.Context) {
 	}
 
 	// Parse every response page and deduplicate call records by Sid across all pages/batches.
+	// Also filter to calls that involve this exophone's VN — job_response pages may contain
+	// all-account calls when the monitoring job's PhoneNumber filter was not applied.
 	seen := make(map[string]struct{})
 	var allRecords []exotel.CallRecord
 	skipped := 0
+	vnBare := utils.NormalizePhone(exophone.ExophoneNumber)
 	source := "job_responses"
 
 	for _, resp := range responses {
@@ -64,6 +68,12 @@ func ReprocessExophoneSnapshot(c *gin.Context) {
 			continue
 		}
 		for _, rec := range cr.Result {
+			// Only keep calls where this VN appears as From or To.
+			if vnBare != "" {
+				if utils.NormalizePhone(rec.To) != vnBare && utils.NormalizePhone(rec.From) != vnBare {
+					continue
+				}
+			}
 			if _, dup := seen[rec.Sid]; !dup {
 				seen[rec.Sid] = struct{}{}
 				allRecords = append(allRecords, rec)
