@@ -410,6 +410,7 @@ func BulkBackfill(c *gin.Context) {
 						Error:          errMsg,
 					})
 					bulk.mu.Unlock()
+					time.Sleep(3 * time.Second)
 					continue
 				}
 
@@ -501,6 +502,9 @@ func BulkBackfill(c *gin.Context) {
 					PagesHit:       result.PagesFetched,
 				})
 				bulk.mu.Unlock()
+
+				// Pause between pairs to avoid Exotel rate-limit (429).
+				time.Sleep(3 * time.Second)
 			}
 		}
 
