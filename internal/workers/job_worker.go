@@ -328,16 +328,29 @@ func executeCalls(ctx context.Context, txnID string, job models.MonitoringJob,
 	latencyMs *int64, retryCount *int, httpStatus *int, rawBody *string,
 	status *string, errMsg *string, log *zap.Logger) error {
 
-	// Window: from the last time this job ran (last_run_at) to now.
-	// Falls back to frequency_minutes if last_run_at is unset (first ever run).
-	// A 1-minute back-overlap on `from` ensures calls at the exact boundary are
-	// never missed; Sid-based upsert deduplication handles any duplicates.
+	// Window: last_run_at (−1 min overlap) → now, capped at:
+	//   (a) midnight IST — snapshots are per calendar-day, no point fetching yesterday
+	//   (b) 4× frequency_minutes ago — limits catch-up after downtime to 4 missed cycles
+	// Falls back to 1× frequency_minutes on the very first run (LastRunAt is nil).
+	// The 1-minute overlap ensures boundary calls aren't missed; SID-based upsert
+	// deduplication absorbs any duplicates it introduces.
 	to := time.Now()
+	ist := time.FixedZone("IST", 5*60*60+30*60)
+	midnightIST := time.Date(to.In(ist).Year(), to.In(ist).Month(), to.In(ist).Day(), 0, 0, 0, 0, ist)
+	maxLookback := to.Add(-time.Duration(job.FrequencyMinute*4) * time.Minute)
+
 	var from time.Time
 	if job.LastRunAt != nil {
 		from = job.LastRunAt.Add(-1 * time.Minute)
 	} else {
 		from = to.Add(-time.Duration(job.FrequencyMinute) * time.Minute)
+	}
+	// Apply caps: never go before midnight IST or further than 4× frequency.
+	if from.Before(midnightIST) {
+		from = midnightIST
+	}
+	if from.Before(maxLookback) {
+		from = maxLookback
 	}
 
 	// Resolve exophone — number for API filtering, SkipCallLogs for per-exophone write control.
