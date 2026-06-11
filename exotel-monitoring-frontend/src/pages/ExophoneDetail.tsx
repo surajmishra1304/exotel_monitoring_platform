@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import {
   Row, Col, Card, Typography, Space, Button, Descriptions, Popconfirm, Tag,
-  DatePicker, Alert,
+  DatePicker, Alert, message,
 } from 'antd';
-import { ArrowLeftOutlined, ReloadOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined, ClockCircleOutlined, DownloadOutlined, SyncOutlined } from '@ant-design/icons';
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
-import { DownloadOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useExophoneMetrics, useExophoneCallAnalytics } from '@/hooks/useExophoneMetrics';
@@ -47,6 +46,7 @@ const ExophoneDetail: React.FC = () => {
   const exophoneId = Number(id);
 
   const [selectedDate, setSelectedDate] = useState<Dayjs | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
   const dateStr = selectedDate ? selectedDate.format('YYYY-MM-DD') : undefined;
 
   const { data: exophone } = useExophoneById(exophoneId);
@@ -77,6 +77,27 @@ const ExophoneDetail: React.FC = () => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleReprocess = async () => {
+    setReprocessing(true);
+    const date = selectedDate ? selectedDate.format('YYYY-MM-DD') : new Date().toISOString().slice(0, 10);
+    try {
+      const res = await fetch(`/api/v1/exophones/${exophoneId}/snapshot/reprocess?date=${date}`, { method: 'POST' });
+      const body = await res.json();
+      if (!res.ok) {
+        message.error(body.error ?? 'Reprocess failed');
+      } else {
+        message.success(
+          `Reprocessed ${body.unique_call_records} unique calls → answer rate ${body.answer_rate_pct}%`
+        );
+        refetchCalls();
+      }
+    } catch {
+      message.error('Network error during reprocess');
+    } finally {
+      setReprocessing(false);
+    }
   };
 
   const callData = callMeta?.data ?? null;
@@ -169,10 +190,23 @@ const ExophoneDetail: React.FC = () => {
             </Space>
           </div>
         </Space>
-        <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="small">Refresh</Button>
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={handleRefresh} size="small">Refresh</Button>
           <Button icon={<DownloadOutlined />} onClick={handleExportCSV} size="small" disabled={!accountID}>
             Export CSV
           </Button>
+          <Popconfirm
+            title="Rebuild snapshot from raw API responses?"
+            description={`Overwrites today's snapshot for ${displayNumber} with a fresh recomputation from saved job responses. Only works if job responses were saved.`}
+            onConfirm={handleReprocess}
+            okText="Reprocess"
+            cancelText="Cancel"
+          >
+            <Button icon={<SyncOutlined spin={reprocessing} />} size="small" loading={reprocessing} danger>
+              Reprocess
+            </Button>
+          </Popconfirm>
+        </Space>
       </div>
 
       <Row gutter={[16, 16]}>

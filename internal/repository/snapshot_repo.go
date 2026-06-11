@@ -455,6 +455,21 @@ func GetCallMetricsForExport(accountID uint64, dateStr string, exophoneID uint64
 // GetJobResponsesForReprocess returns all successful CALLS job_responses for a
 // given exophone on a given date. Rows are ordered oldest-first so pages that
 // were fetched earlier in the day come before later ones.
+// GetCallLogsForReprocess returns all call_logs for an exophone on a given date.
+// Used as a fallback in the reprocess endpoint when job_responses are unavailable
+// (e.g. exophone had skip_call_logs_write=false so raw pages were not saved).
+func GetCallLogsForReprocess(exophoneID uint64, dateStr string) ([]models.CallLog, error) {
+	if dateStr == "" {
+		dateStr = time.Now().Format("2006-01-02")
+	}
+	var logs []models.CallLog
+	result := database.DB.
+		Where("exophone_id = ? AND DATE(start_time) = ?", exophoneID, dateStr).
+		Order("start_time ASC").
+		Find(&logs)
+	return logs, result.Error
+}
+
 func GetJobResponsesForReprocess(exophoneID uint64, dateStr string) ([]models.JobResponse, error) {
 	if dateStr == "" {
 		dateStr = time.Now().Format("2006-01-02")

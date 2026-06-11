@@ -13,8 +13,9 @@ type FetchCallsResult struct {
 	HTTPStatus   int
 	LatencyMs    int64
 	Response     *CallsResponse
-	RawBody      string // raw body of the first (or last failing) response
+	RawBody      string   // raw body of the first (or last failing) response
 	PagesFetched int
+	PageBodies   []string // raw body of each successfully fetched page, in order
 }
 
 // FetchCalls fetches all call records for a specific VN (exophoneNumber) in the
@@ -47,6 +48,7 @@ func FetchCalls(sid, subdomain, apiKey, apiToken, exophoneNumber string, from, t
 
 	var (
 		allRecords   []CallRecord
+		pageRawBodies []string
 		firstRawBody string
 		lastHTTP     int
 		totalLatency int64
@@ -88,6 +90,7 @@ func FetchCalls(sid, subdomain, apiKey, apiToken, exophoneNumber string, from, t
 				LatencyMs:    totalLatency,
 				RawBody:      rawBody,
 				PagesFetched: pages,
+				PageBodies:   pageRawBodies,
 			}, nil
 		}
 
@@ -98,9 +101,12 @@ func FetchCalls(sid, subdomain, apiKey, apiToken, exophoneNumber string, from, t
 				LatencyMs:    totalLatency,
 				RawBody:      rawBody,
 				PagesFetched: pages,
+				PageBodies:   pageRawBodies,
 			}, fmt.Errorf("failed to parse calls response: %w", err)
 		}
 
+		// Save this page's raw body so callers can persist each page individually.
+		pageRawBodies = append(pageRawBodies, rawBody)
 		allRecords = append(allRecords, page.Result...)
 
 		// Stop when there is no next page cursor.
@@ -119,6 +125,7 @@ func FetchCalls(sid, subdomain, apiKey, apiToken, exophoneNumber string, from, t
 		LatencyMs:    totalLatency,
 		RawBody:      firstRawBody,
 		PagesFetched: pages,
+		PageBodies:   pageRawBodies,
 		Response: &CallsResponse{
 			Result: allRecords,
 		},

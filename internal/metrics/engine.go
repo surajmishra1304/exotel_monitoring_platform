@@ -79,11 +79,21 @@ type CallSummary struct {
 	DroppedLeg1 int // completed + ConvDur=0 + Leg2Status="": customer abandoned in IVR (no agent routing)
 	DroppedLeg2 int // completed + ConvDur=0 + Leg2Status!="": agent routing attempted but no-answer
 
-	Failed   int // status=failed
-	NoAnswer int // status=no-answer
-	Busy     int // status=busy
-	Canceled int // status=canceled
-	Other    int // any unrecognised Exotel status
+	Failed   int // top-level status=failed
+	NoAnswer int // top-level status=no-answer
+	Busy     int // top-level status=busy
+	Canceled int // top-level status=canceled
+	Other    int // any unrecognised top-level status
+
+	// Leg-level status breakdown from Details block (requires details=true).
+	// These are always tracked regardless of top-level status.
+	Leg1NoAnswer int // Leg1Status = "no-answer": agent did not pick up
+	Leg1Busy     int // Leg1Status = "busy": agent line was busy
+	Leg1Failed   int // Leg1Status = "failed": agent leg failure
+	Leg2NoAnswer int // Leg2Status = "no-answer": customer did not answer (outbound)
+	Leg2Busy     int // Leg2Status = "busy": customer line was busy (outbound)
+	Leg2Failed   int // Leg2Status = "failed": customer leg network failure
+	Leg2Canceled int // Leg2Status = "canceled": customer hung up while waiting for agent
 
 	TotalDurationSec   int64
 	AnswerRate         float64 // connected / total * 100
@@ -153,7 +163,11 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 			summary.Leg2Total++
 		}
 
-		switch r.Status {
+		// Normalise status to lowercase so Exotel capitalisation variants
+		// ("Busy", "No-Answer", "Completed", etc.) are handled correctly.
+		status := strings.ToLower(r.Status)
+
+		switch status {
 		case "completed":
 			// Connected = ConversationDuration > 0: both parties were actually bridged.
 			// Dropped = ConversationDuration == 0: no conversation happened.
@@ -172,7 +186,7 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 			} else if legNum == models.Leg2 {
 				// Panel mode: customer-side (Leg2) no-answer
 				summary.DroppedLeg2++
-			} else if r.Details.Leg2Status == "" {
+			} else if strings.ToLower(r.Details.Leg2Status) == "" {
 				// IVR: no agent routing attempted — customer dropped in IVR
 				summary.DroppedLeg1++
 			} else {
@@ -181,14 +195,39 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 			}
 		case "failed":
 			summary.Failed++
-		case "no-answer":
+		case "no-answer", "noanswer":
 			summary.NoAnswer++
 		case "busy":
 			summary.Busy++
-		case "canceled":
+		case "canceled", "cancelled":
 			summary.Canceled++
+		case "in-progress", "queued", "initiated", "ringing":
+			// Live calls still in flight when the API was polled; not terminal outcomes.
+			// Count them separately so they don't inflate other buckets.
+			summary.Other++
 		default:
 			summary.Other++
+		}
+
+		// Leg-level status breakdown — always populated when details=true is used.
+		// These are independent of the top-level status switch above.
+		switch strings.ToLower(r.Details.Leg1Status) {
+		case "no-answer", "noanswer":
+			summary.Leg1NoAnswer++
+		case "busy":
+			summary.Leg1Busy++
+		case "failed":
+			summary.Leg1Failed++
+		}
+		switch strings.ToLower(r.Details.Leg2Status) {
+		case "no-answer", "noanswer":
+			summary.Leg2NoAnswer++
+		case "busy":
+			summary.Leg2Busy++
+		case "failed":
+			summary.Leg2Failed++
+		case "canceled", "cancelled":
+			summary.Leg2Canceled++
 		}
 	}
 

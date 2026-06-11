@@ -332,10 +332,12 @@ func executeCalls(ctx context.Context, txnID string, job models.MonitoringJob,
 	to := time.Now()
 	from := to.Add(-time.Duration(job.FrequencyMinute+1) * time.Minute)
 
-	// Resolve the exophone number so we can filter calls server-side.
+	// Resolve exophone — number for API filtering, SkipCallLogs for per-exophone write control.
 	exophoneNumber := ""
+	exophoneSkipLogs := false
 	if ep, err := repository.GetExophoneByID(job.ExophoneID); err == nil {
 		exophoneNumber = ep.ExophoneNumber
+		exophoneSkipLogs = ep.SkipCallLogs == 1
 	}
 
 	var callsResult *exotel.FetchCallsResult
@@ -367,20 +369,28 @@ func executeCalls(ctx context.Context, txnID string, job models.MonitoringJob,
 		return false, nil
 	})
 
-	// Save the full aggregated response (all pages combined) so reprocess can reconstruct
-	// every call record from job_responses without calling Exotel again.
-	rawToSave := *rawBody
-	if callsResult != nil && callsResult.Response != nil {
-		if b, jerr := json.Marshal(callsResult.Response); jerr == nil {
-			rawToSave = string(b)
+	// Save each page of the Exotel response as a separate job_response row so that
+	// reprocess can reconstruct every call record even if the job was mid-pagination
+	// when it was interrupted. One row per page; deduplication by Sid happens at
+	// reprocess time.
+	if callsResult != nil && len(callsResult.PageBodies) > 0 {
+		for _, pageRaw := range callsResult.PageBodies {
+			_ = repository.SaveJobResponse(&models.JobResponse{
+				TransactionID: txnID,
+				ResponseType:  "CALLS",
+				HTTPStatus:    *httpStatus,
+				RawResponse:   pageRaw,
+			})
 		}
+	} else {
+		// Fallback: save whatever raw body we have (e.g. error response or empty result).
+		_ = repository.SaveJobResponse(&models.JobResponse{
+			TransactionID: txnID,
+			ResponseType:  "CALLS",
+			HTTPStatus:    *httpStatus,
+			RawResponse:   *rawBody,
+		})
 	}
-	_ = repository.SaveJobResponse(&models.JobResponse{
-		TransactionID: txnID,
-		ResponseType:  "CALLS",
-		HTTPStatus:    *httpStatus,
-		RawResponse:   rawToSave,
-	})
 
 	if err != nil {
 		handleRetryExhausted(txnID, job, err, *retryCount, retryCfg.MaxRetries, "CALLS")
@@ -409,7 +419,8 @@ func executeCalls(ctx context.Context, txnID string, job models.MonitoringJob,
 			zap.Int("pages", callsResult.PagesFetched),
 		)
 		callLogs, mets, summary := metrics.ProcessCallRecords(txnID, job, exophoneNumber, records)
-		if !feature.SkipCallLogsWrite() {
+		// Skip writing call_logs if either the global flag is on OR this exophone has skip_call_logs=1.
+		if !feature.SkipCallLogsWrite() && !exophoneSkipLogs {
 			_ = repository.SaveCallLogs(callLogs)
 		}
 		_ = repository.SaveMetrics(mets)

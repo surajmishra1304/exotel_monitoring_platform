@@ -63,7 +63,13 @@ func AccumulateCallMetrics(accountID, exophoneID uint64, s metrics.CallSummary) 
 		return nil
 	}
 
-	today := time.Now().Truncate(24 * time.Hour)
+	// Use IST (UTC+5:30) to determine the current date.
+	// time.Truncate operates on absolute UTC, so Truncate(24h) would give UTC midnight
+	// which is 5:30 AM IST — meaning calls between midnight and 5:30 AM IST would land
+	// on the wrong snapshot date on an IST-deployed server.
+	ist := time.FixedZone("IST", 5*60*60+30*60)
+	nowIST := time.Now().In(ist)
+	today := time.Date(nowIST.Year(), nowIST.Month(), nowIST.Day(), 0, 0, 0, 0, time.UTC)
 
 	// Fetch existing snapshot so we can accumulate on top of it.
 	existing, err := repository.GetCallMetricsSnapshot(exophoneID, today)
@@ -86,12 +92,22 @@ func AccumulateCallMetrics(accountID, exophoneID uint64, s metrics.CallSummary) 
 	snap.Leg2Total += s.Leg2Total
 	snap.Leg2Drops += s.DroppedLeg2
 	snap.ConnectedCalls += s.Connected
-	snap.DroppedCalls += s.DroppedLeg1 + s.DroppedLeg2
+	// DroppedCalls must always equal Leg1Drops + Leg2Drops.
+	// Never accumulate it independently — if old rows had DroppedCalls set before
+	// Leg1/Leg2 tracking was added, independent accumulation would cause them to diverge.
+	snap.DroppedCalls = snap.Leg1Drops + snap.Leg2Drops
 	snap.FailedCalls += s.Failed
 	snap.NoAnswerCalls += s.NoAnswer
 	snap.BusyCalls += s.Busy
 	snap.CanceledCalls += s.Canceled
 	snap.OtherCalls += s.Other
+	snap.Leg1NoAnswer += s.Leg1NoAnswer
+	snap.Leg1Busy += s.Leg1Busy
+	snap.Leg1Failed += s.Leg1Failed
+	snap.Leg2NoAnswer += s.Leg2NoAnswer
+	snap.Leg2Busy += s.Leg2Busy
+	snap.Leg2Failed += s.Leg2Failed
+	snap.Leg2Canceled += s.Leg2Canceled
 
 	// Weighted-average duration: reconstruct existing total from avg * count.
 	existingTotalDur := snap.AvgDurationSec * float64(snap.TotalCalls-s.Total)

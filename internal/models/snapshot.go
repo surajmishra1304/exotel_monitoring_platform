@@ -14,14 +14,23 @@ type CallMetricsSnapshot struct {
 	// Leg 2 (B-leg): VN → agent/customer (conversation leg)
 	Leg2Total           int       `gorm:"column:leg2_total;default:0" json:"leg2_total"`
 	Leg2Drops           int       `gorm:"column:leg2_drops;default:0" json:"leg2_drops"`           // Leg2 duration <= DropThresholdSec (real drops)
-	// Status breakdown across all legs
-	ConnectedCalls      int       `gorm:"column:connected_calls;default:0" json:"connected_calls"` // status=completed
-	DroppedCalls        int       `gorm:"column:dropped_calls;default:0" json:"dropped_calls"`     // Leg2 completed AND duration <= DropThresholdSec
-	FailedCalls         int       `gorm:"column:failed_calls;default:0" json:"failed_calls"`       // status=failed
-	NoAnswerCalls       int       `gorm:"column:no_answer_calls;default:0" json:"no_answer_calls"` // status=no-answer
-	BusyCalls           int       `gorm:"column:busy_calls;default:0" json:"busy_calls"`           // status=busy
-	CanceledCalls       int       `gorm:"column:canceled_calls;default:0" json:"canceled_calls"`   // status=canceled
-	OtherCalls          int       `gorm:"column:other_calls;default:0" json:"other_calls"`         // any unrecognised status
+	// Top-level status breakdown (applies to non-IVR / outbound calls)
+	ConnectedCalls      int       `gorm:"column:connected_calls;default:0" json:"connected_calls"` // ConversationDuration > 0
+	DroppedCalls        int       `gorm:"column:dropped_calls;default:0" json:"dropped_calls"`     // leg1_drops + leg2_drops
+	FailedCalls         int       `gorm:"column:failed_calls;default:0" json:"failed_calls"`       // top-level status=failed
+	NoAnswerCalls       int       `gorm:"column:no_answer_calls;default:0" json:"no_answer_calls"` // top-level status=no-answer
+	BusyCalls           int       `gorm:"column:busy_calls;default:0" json:"busy_calls"`           // top-level status=busy
+	CanceledCalls       int       `gorm:"column:canceled_calls;default:0" json:"canceled_calls"`   // top-level status=canceled
+	OtherCalls          int       `gorm:"column:other_calls;default:0" json:"other_calls"`         // unrecognised top-level status
+	// Leg-level status breakdown (requires details=true from Exotel API)
+	// Leg1 = agent/IVR side; Leg2 = customer side
+	Leg1NoAnswer        int       `gorm:"column:leg1_no_answer;default:0" json:"leg1_no_answer"`   // agent did not pick up
+	Leg1Busy            int       `gorm:"column:leg1_busy;default:0" json:"leg1_busy"`             // agent line was busy
+	Leg1Failed          int       `gorm:"column:leg1_failed;default:0" json:"leg1_failed"`         // agent leg network failure
+	Leg2NoAnswer        int       `gorm:"column:leg2_no_answer;default:0" json:"leg2_no_answer"`   // customer did not pick up (outbound)
+	Leg2Busy            int       `gorm:"column:leg2_busy;default:0" json:"leg2_busy"`             // customer line was busy (outbound)
+	Leg2Failed          int       `gorm:"column:leg2_failed;default:0" json:"leg2_failed"`         // customer leg network failure
+	Leg2Canceled        int       `gorm:"column:leg2_canceled;default:0" json:"leg2_canceled"`     // customer hung up while waiting for agent
 	AvgDurationSec      float64   `gorm:"column:avg_duration_sec;default:0" json:"avg_duration_sec"`
 	AnswerRate          float64   `gorm:"column:answer_rate;default:0" json:"answer_rate"`         // connected/total * 100
 	DropRate            float64   `gorm:"column:drop_rate;default:0" json:"drop_rate"`             // Leg2 drops / Leg2 total * 100

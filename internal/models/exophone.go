@@ -10,6 +10,7 @@ type Exophone struct {
 	Priority       string     `gorm:"column:priority;default:P1" json:"priority"`
 	MonitoringFlag     int        `gorm:"column:monitoring_flag;default:1" json:"monitoring_flag"`
 	IsCronApplicable   int        `gorm:"column:is_cron_applicable;default:0" json:"is_cron_applicable"`
+	SkipCallLogs       int        `gorm:"column:skip_call_logs;default:0" json:"skip_call_logs"` // 1 = skip writing call_logs for this exophone
 	CacheTTL       int        `gorm:"column:cache_ttl;default:900" json:"cache_ttl"`
 	MetadataJSON   string     `gorm:"column:metadata_json;type:json" json:"metadata_json,omitempty"`
 	LastSyncedAt   *time.Time `gorm:"column:last_synced_at" json:"last_synced_at"`
