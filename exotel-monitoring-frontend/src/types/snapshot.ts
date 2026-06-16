@@ -33,6 +33,10 @@ export interface CallMetricsSnapshot {
   leg2_busy: number;
   leg2_failed: number;
   leg2_canceled: number;
+  // Exact Leg1Status → Leg2Status → count breakdown.
+  // Stored as a JSON string in DB; parsed to object by the frontend.
+  // Shape after parse: { "no-answer": { "canceled": 10713, "failed": 4081 }, "busy": { "canceled": 283 }, ... }
+  leg_breakdown?: string | Record<string, Record<string, number>> | null;
   created_at: string;
   updated_at: string;
 }

@@ -427,49 +427,71 @@ const ExophoneDetail: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Leg status breakdown — from details=true Exotel API */}
+                    {/* Exact Leg1 → Leg2 status combination breakdown */}
                     {(() => {
-                      const l1na = callData.leg1_no_answer ?? 0;
-                      const l1busy = callData.leg1_busy ?? 0;
-                      const l1fail = callData.leg1_failed ?? 0;
-                      const l2na = callData.leg2_no_answer ?? 0;
-                      const l2busy = callData.leg2_busy ?? 0;
-                      const l2fail = callData.leg2_failed ?? 0;
-                      const l2can = callData.leg2_canceled ?? 0;
-                      const hasLegData = l1na + l1busy + l1fail + l2na + l2busy + l2fail + l2can > 0;
-                      if (!hasLegData) return null;
+                      let breakdown: Record<string, Record<string, number>> | null = null;
+                      const raw = callData.leg_breakdown;
+                      if (typeof raw === 'string' && raw) {
+                        try { breakdown = JSON.parse(raw); } catch { breakdown = null; }
+                      } else if (raw && typeof raw === 'object') {
+                        breakdown = raw as Record<string, Record<string, number>>;
+                      }
+                      if (!breakdown || Object.keys(breakdown).length === 0) return null;
                       const total = callData.total_calls || 1;
                       const pct = (n: number) => `${((n / total) * 100).toFixed(1)}%`;
-                      const row = (label: string, val: number, color: string) =>
-                        val > 0 ? (
-                          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
-                            <Text style={{ color }}>{label}</Text>
-                            <Text type="secondary">{val} ({pct(val)})</Text>
-                          </div>
-                        ) : null;
+
+                      const leg1ColorMap: Record<string, string> = {
+                        'no-answer': '#faad14',
+                        'busy': '#ff7a45',
+                        'failed': '#ff4d4f',
+                        'completed': '#52c41a',
+                      };
+                      const leg2LabelMap: Record<string, string> = {
+                        'canceled': 'Leg2: canceled',
+                        'failed': 'Leg2: failed',
+                        'no-answer': 'Leg2: no-answer',
+                        'busy': 'Leg2: busy',
+                        'completed': 'Leg2: completed',
+                        '': 'Leg2: not initiated',
+                      };
+
+                      const orderedLeg1 = ['no-answer', 'busy', 'failed', 'completed', ''];
+                      const sorted = [
+                        ...orderedLeg1.filter(k => breakdown[k]),
+                        ...Object.keys(breakdown).filter(k => !orderedLeg1.includes(k)),
+                      ];
+
                       return (
                         <div style={{ marginTop: 8, padding: '10px 12px', background: '#f6f6ff', borderRadius: 6, border: '1px solid #e8e8f0' }}>
-                          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
-                            Leg Status Reasons
-                            <Text type="secondary" style={{ fontWeight: 'normal', marginLeft: 6, fontSize: 10 }}>from details=true API</Text>
+                          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+                            Why calls dropped
+                            <Text type="secondary" style={{ fontWeight: 'normal', marginLeft: 6, fontSize: 10 }}>Leg1 root cause → Leg2 effect</Text>
                           </Text>
-                          {(l1na > 0 || l1busy > 0 || l1fail > 0) && (
-                            <div style={{ marginBottom: 6 }}>
-                              <Text type="secondary" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>Leg 1</Text>
-                              {row('No Answer', l1na, '#faad14')}
-                              {row('Busy', l1busy, '#ff7a45')}
-                              {row('Failed', l1fail, '#ff4d4f')}
-                            </div>
-                          )}
-                          {(l2na > 0 || l2busy > 0 || l2fail > 0 || l2can > 0) && (
-                            <div>
-                              <Text type="secondary" style={{ fontSize: 10, display: 'block', marginBottom: 2 }}>Leg 2</Text>
-                              {row('No Answer', l2na, '#faad14')}
-                              {row('Busy', l2busy, '#ff7a45')}
-                              {row('Failed', l2fail, '#ff4d4f')}
-                              {row('Canceled', l2can, '#8c8c8c')}
-                            </div>
-                          )}
+                          {sorted.map(l1 => {
+                            const l2map = breakdown[l1];
+                            const l1Label = l1 === '' ? 'Leg1: unknown' : `Leg1: ${l1}`;
+                            const l1Color = leg1ColorMap[l1] ?? '#595959';
+                            const orderedL2 = ['canceled', 'failed', 'no-answer', 'busy', 'completed', ''];
+                            const sortedL2 = [
+                              ...orderedL2.filter(k => l2map[k] !== undefined),
+                              ...Object.keys(l2map).filter(k => !orderedL2.includes(k)),
+                            ];
+                            return (
+                              <div key={l1} style={{ marginBottom: 8 }}>
+                                <Text style={{ fontSize: 11, color: l1Color, fontWeight: 600 }}>{l1Label}</Text>
+                                {sortedL2.map(l2 => {
+                                  const cnt = l2map[l2];
+                                  if (!cnt) return null;
+                                  return (
+                                    <div key={l2} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginTop: 2, paddingLeft: 10 }}>
+                                      <Text type="secondary">{leg2LabelMap[l2] ?? `Leg2: ${l2 || 'none'}`}</Text>
+                                      <Text type="secondary">{cnt} ({pct(cnt)})</Text>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })()}

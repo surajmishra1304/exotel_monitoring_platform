@@ -21,8 +21,9 @@ func UpsertCallMetricsSnapshot(s *models.CallMetricsSnapshot) error {
 			 hourly_distribution, peak_hour,
 			 leg1_no_answer, leg1_busy, leg1_failed,
 			 leg2_no_answer, leg2_busy, leg2_failed, leg2_canceled,
+			 leg_breakdown,
 			 created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE
 			total_calls         = VALUES(total_calls),
 			leg1_total          = VALUES(leg1_total),
@@ -50,6 +51,7 @@ func UpsertCallMetricsSnapshot(s *models.CallMetricsSnapshot) error {
 			leg2_busy           = VALUES(leg2_busy),
 			leg2_failed         = VALUES(leg2_failed),
 			leg2_canceled       = VALUES(leg2_canceled),
+			leg_breakdown       = VALUES(leg_breakdown),
 			updated_at          = NOW()`,
 		s.SnapshotDate, s.AccountID, s.ExophoneID, s.TotalCalls,
 		s.Leg1Total, s.Leg1Drops,
@@ -60,6 +62,7 @@ func UpsertCallMetricsSnapshot(s *models.CallMetricsSnapshot) error {
 		s.HourlyDistribution, s.PeakHour,
 		s.Leg1NoAnswer, s.Leg1Busy, s.Leg1Failed,
 		s.Leg2NoAnswer, s.Leg2Busy, s.Leg2Failed, s.Leg2Canceled,
+		s.LegBreakdown,
 	).Error
 }
 
@@ -522,6 +525,9 @@ func GetJobResponsesForReprocess(exophoneID uint64, dateStr string) ([]models.Jo
 		dateStr = time.Now().Format("2006-01-02")
 	}
 	var responses []models.JobResponse
+	// Match on either:
+	//   (a) live jobs where the job ran on that date (DATE(jt.started_at) = dateStr), or
+	//   (b) backfill jobs whose transaction_id encodes the data date (BACKFILL-{id}-{date}).
 	result := database.DB.Raw(`
 		SELECT jr.id, jr.transaction_id, jr.response_type, jr.http_status,
 		       jr.raw_response, jr.parsed_response, jr.created_at
@@ -530,9 +536,9 @@ func GetJobResponsesForReprocess(exophoneID uint64, dateStr string) ([]models.Jo
 		WHERE jt.exophone_id = ?
 		  AND jr.response_type = 'CALLS'
 		  AND jr.http_status BETWEEN 200 AND 299
-		  AND DATE(jt.started_at) = ?
+		  AND (DATE(jt.started_at) = ? OR jt.transaction_id = CONCAT('BACKFILL-', ?, '-', ?))
 		ORDER BY jt.started_at ASC`,
-		exophoneID, dateStr,
+		exophoneID, dateStr, exophoneID, dateStr,
 	).Scan(&responses)
 	return responses, result.Error
 }

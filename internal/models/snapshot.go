@@ -38,6 +38,9 @@ type CallMetricsSnapshot struct {
 	SuccessRate         float64   `gorm:"column:success_rate;default:0" json:"success_rate"`       // alias for answer_rate for compat
 	HourlyDistribution  string    `gorm:"column:hourly_distribution;type:json" json:"hourly_distribution"` // 24-element JSON array
 	PeakHour            int       `gorm:"column:peak_hour;default:0" json:"peak_hour"`             // 0-23, hour with most calls
+	// Exact Leg1Status → Leg2Status combination counts, stored as nested JSON.
+	// Shape: {"no-answer": {"canceled": 10713, "failed": 4081}, "busy": {"canceled": 283}, ...}
+	LegBreakdown        string    `gorm:"column:leg_breakdown;type:json" json:"leg_breakdown"`
 	CreatedAt           time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt           time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }

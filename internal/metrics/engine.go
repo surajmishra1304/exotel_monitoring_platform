@@ -95,6 +95,11 @@ type CallSummary struct {
 	Leg2Failed   int // Leg2Status = "failed": customer leg network failure
 	Leg2Canceled int // Leg2Status = "canceled": customer hung up while waiting for agent
 
+	// LegStatusBreakdown tracks exact Leg1Status → Leg2Status → count combinations.
+	// Key structure: map[leg1_status]map[leg2_status]count
+	// Use "" as leg2_status key when Leg2 was never initiated.
+	LegStatusBreakdown map[string]map[string]int
+
 	TotalDurationSec   int64
 	AnswerRate         float64 // connected / total * 100
 	SuccessRate        float64 // alias for AnswerRate
@@ -233,6 +238,17 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 		case "canceled", "cancelled":
 			summary.Leg2Canceled++
 		}
+
+		// Track exact Leg1→Leg2 status combination for per-drop breakdown.
+		leg1Key := strings.ToLower(r.Details.Leg1Status)
+		leg2Key := strings.ToLower(r.Details.Leg2Status)
+		if summary.LegStatusBreakdown == nil {
+			summary.LegStatusBreakdown = make(map[string]map[string]int)
+		}
+		if summary.LegStatusBreakdown[leg1Key] == nil {
+			summary.LegStatusBreakdown[leg1Key] = make(map[string]int)
+		}
+		summary.LegStatusBreakdown[leg1Key][leg2Key]++
 	}
 
 	summary.Total = len(records)
@@ -308,6 +324,45 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 	)
 
 	return callLogs, mets, summary
+}
+
+// LegBreakdownJSON encodes the Leg1→Leg2 status combination map to a JSON string for DB storage.
+func LegBreakdownJSON(breakdown map[string]map[string]int) string {
+	if len(breakdown) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(breakdown)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// MergeLegBreakdown merges a new JSON breakdown string into an existing one, summing counts.
+func MergeLegBreakdown(existing, incoming string) string {
+	merged := make(map[string]map[string]int)
+	for _, s := range []string{existing, incoming} {
+		if s == "" {
+			continue
+		}
+		var m map[string]map[string]int
+		if err := json.Unmarshal([]byte(s), &m); err != nil {
+			continue
+		}
+		for l1, l2map := range m {
+			if merged[l1] == nil {
+				merged[l1] = make(map[string]int)
+			}
+			for l2, cnt := range l2map {
+				merged[l1][l2] += cnt
+			}
+		}
+	}
+	if len(merged) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(merged)
+	return string(b)
 }
 
 // HourlyDistributionJSON encodes the 24-element hourly array to a JSON string for DB storage.

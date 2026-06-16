@@ -229,6 +229,7 @@ func BackfillExophoneSnapshot(c *gin.Context) {
 			Leg2Busy:           summary.Leg2Busy,
 			Leg2Failed:         summary.Leg2Failed,
 			Leg2Canceled:       summary.Leg2Canceled,
+			LegBreakdown:       metrics.LegBreakdownJSON(summary.LegStatusBreakdown),
 		}
 		if saveErr := repository.UpsertCallMetricsSnapshot(snap); saveErr != nil {
 			fail("snapshot save failed: " + saveErr.Error())
@@ -515,6 +516,7 @@ func BulkBackfill(c *gin.Context) {
 						Leg1Failed: summary.Leg1Failed, Leg2NoAnswer: summary.Leg2NoAnswer,
 						Leg2Busy: summary.Leg2Busy, Leg2Failed: summary.Leg2Failed,
 						Leg2Canceled: summary.Leg2Canceled,
+						LegBreakdown: metrics.LegBreakdownJSON(summary.LegStatusBreakdown),
 					}
 					_ = repository.UpsertCallMetricsSnapshot(snap)
 

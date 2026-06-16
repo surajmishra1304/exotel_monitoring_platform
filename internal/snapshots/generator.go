@@ -114,6 +114,7 @@ func AccumulateCallMetrics(accountID, exophoneID uint64, s metrics.CallSummary) 
 	snap.Leg2Busy += s.Leg2Busy
 	snap.Leg2Failed += s.Leg2Failed
 	snap.Leg2Canceled += s.Leg2Canceled
+	snap.LegBreakdown = metrics.MergeLegBreakdown(snap.LegBreakdown, metrics.LegBreakdownJSON(s.LegStatusBreakdown))
 
 	// Weighted-average duration: reconstruct existing total from avg * count.
 	existingTotalDur := snap.AvgDurationSec * float64(snap.TotalCalls-s.Total)

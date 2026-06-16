@@ -70,9 +70,15 @@ func ReprocessExophoneSnapshot(c *gin.Context) {
 			continue
 		}
 		for _, rec := range cr.Result {
-			// Only keep calls where this VN appears as From or To.
+			// Only keep calls belonging to this VN.
+			// The VN appears in PhoneNumber (always set by Exotel), and sometimes in
+			// From or To depending on call direction. Check all three so outbound-from-VN
+			// calls (PhoneNumber=VN, From=VN, To=CX) and inbound-to-VN calls (To=VN)
+			// are both retained.
 			if vnBare != "" {
-				if utils.NormalizePhone(rec.To) != vnBare && utils.NormalizePhone(rec.From) != vnBare {
+				if utils.NormalizePhone(rec.PhoneNumber) != vnBare &&
+					utils.NormalizePhone(rec.To) != vnBare &&
+					utils.NormalizePhone(rec.From) != vnBare {
 					continue
 				}
 			}
@@ -153,6 +159,7 @@ func ReprocessExophoneSnapshot(c *gin.Context) {
 		Leg2Busy:           summary.Leg2Busy,
 		Leg2Failed:         summary.Leg2Failed,
 		Leg2Canceled:       summary.Leg2Canceled,
+		LegBreakdown:       metrics.LegBreakdownJSON(summary.LegStatusBreakdown),
 	}
 
 	if err := repository.UpsertCallMetricsSnapshot(snap); err != nil {
