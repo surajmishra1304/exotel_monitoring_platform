@@ -90,18 +90,25 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 	// Leg 2 = call_to does not match the VN (bridged conversation leg).
 	// Drops on Leg 2 = customer-side drop (didn't pick up / call fell within DropThresholdSec).
 	type agg struct {
-		Total     int     `gorm:"column:total"`
-		Leg1Total int     `gorm:"column:leg1_total"`
-		Leg1Drops int     `gorm:"column:leg1_drops"`
-		Leg2Total int     `gorm:"column:leg2_total"`
-		Leg2Drops int     `gorm:"column:leg2_drops"`
-		Connected int     `gorm:"column:connected"`
-		Failed    int     `gorm:"column:failed"`
-		NoAnswer  int     `gorm:"column:no_answer"`
-		Busy      int     `gorm:"column:busy"`
-		Canceled  int     `gorm:"column:canceled"`
-		Other     int     `gorm:"column:other"`
-		AvgDur    float64 `gorm:"column:avg_dur"`
+		Total        int     `gorm:"column:total"`
+		Leg1Total    int     `gorm:"column:leg1_total"`
+		Leg1Drops    int     `gorm:"column:leg1_drops"`
+		Leg2Total    int     `gorm:"column:leg2_total"`
+		Leg2Drops    int     `gorm:"column:leg2_drops"`
+		Connected    int     `gorm:"column:connected"`
+		Failed       int     `gorm:"column:failed"`
+		NoAnswer     int     `gorm:"column:no_answer"`
+		Busy         int     `gorm:"column:busy"`
+		Canceled     int     `gorm:"column:canceled"`
+		Other        int     `gorm:"column:other"`
+		AvgDur       float64 `gorm:"column:avg_dur"`
+		Leg1NoAnswer int     `gorm:"column:leg1_no_answer"`
+		Leg1Busy     int     `gorm:"column:leg1_busy"`
+		Leg1Failed   int     `gorm:"column:leg1_failed"`
+		Leg2NoAnswer int     `gorm:"column:leg2_no_answer"`
+		Leg2Busy     int     `gorm:"column:leg2_busy"`
+		Leg2Failed   int     `gorm:"column:leg2_failed"`
+		Leg2Canceled int     `gorm:"column:leg2_canceled"`
 	}
 	var a agg
 	err := database.DB.Raw(`
@@ -124,7 +131,14 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 			SUM(status = 'busy') AS busy,
 			SUM(status = 'canceled') AS canceled,
 			SUM(status NOT IN ('completed','failed','no-answer','busy','canceled')) AS other,
-			COALESCE(AVG(duration_sec), 0) AS avg_dur
+			COALESCE(AVG(duration_sec), 0) AS avg_dur,
+			SUM(leg_number = 1 AND status = 'no-answer') AS leg1_no_answer,
+			SUM(leg_number = 1 AND status = 'busy')      AS leg1_busy,
+			SUM(leg_number = 1 AND status = 'failed')    AS leg1_failed,
+			SUM(leg_number = 2 AND status = 'no-answer') AS leg2_no_answer,
+			SUM(leg_number = 2 AND status = 'busy')      AS leg2_busy,
+			SUM(leg_number = 2 AND status = 'failed')    AS leg2_failed,
+			SUM(leg_number = 2 AND status = 'canceled')  AS leg2_canceled
 		FROM call_logs
 		WHERE exophone_id = ? AND DATE(start_time) = ?`,
 		exophoneID, dateStr,
@@ -195,8 +209,11 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 			 connected_calls, dropped_calls,
 			 failed_calls, no_answer_calls, busy_calls, canceled_calls, other_calls,
 			 avg_duration_sec, answer_rate, drop_rate, leg1_drop_rate, success_rate,
-			 hourly_distribution, peak_hour, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+			 hourly_distribution, peak_hour,
+			 leg1_no_answer, leg1_busy, leg1_failed,
+			 leg2_no_answer, leg2_busy, leg2_failed, leg2_canceled,
+			 created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 		ON DUPLICATE KEY UPDATE
 			total_calls         = VALUES(total_calls),
 			leg1_total          = VALUES(leg1_total),
@@ -217,6 +234,13 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 			success_rate        = VALUES(success_rate),
 			hourly_distribution = VALUES(hourly_distribution),
 			peak_hour           = VALUES(peak_hour),
+			leg1_no_answer      = VALUES(leg1_no_answer),
+			leg1_busy           = VALUES(leg1_busy),
+			leg1_failed         = VALUES(leg1_failed),
+			leg2_no_answer      = VALUES(leg2_no_answer),
+			leg2_busy           = VALUES(leg2_busy),
+			leg2_failed         = VALUES(leg2_failed),
+			leg2_canceled       = VALUES(leg2_canceled),
 			updated_at          = NOW()`,
 		snapshotDate, accountID, exophoneID, a.Total,
 		a.Leg1Total, a.Leg1Drops, a.Leg2Total, a.Leg2Drops,
@@ -224,6 +248,8 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 		a.Failed, a.NoAnswer, a.Busy, a.Canceled, a.Other,
 		a.AvgDur, answerRate, dropRate, leg1DropRate, answerRate,
 		string(distJSON), peakHour,
+		a.Leg1NoAnswer, a.Leg1Busy, a.Leg1Failed,
+		a.Leg2NoAnswer, a.Leg2Busy, a.Leg2Failed, a.Leg2Canceled,
 	).Error
 }
 
