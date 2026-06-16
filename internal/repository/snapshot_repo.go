@@ -526,8 +526,9 @@ func GetJobResponsesForReprocess(exophoneID uint64, dateStr string) ([]models.Jo
 	}
 	var responses []models.JobResponse
 	// Match on either:
-	//   (a) live jobs where the job ran on that date (DATE(jt.started_at) = dateStr), or
-	//   (b) backfill jobs whose transaction_id encodes the data date (BACKFILL-{id}-{date}).
+	//   (a) live monitoring jobs that ran on that date — exclude BACKFILL transactions
+	//       so a backfill that ran on day D does not pollute other dates' reprocess, or
+	//   (b) backfill job whose transaction_id encodes the data date (BACKFILL-{id}-{date}).
 	result := database.DB.Raw(`
 		SELECT jr.id, jr.transaction_id, jr.response_type, jr.http_status,
 		       jr.raw_response, jr.parsed_response, jr.created_at
@@ -536,7 +537,10 @@ func GetJobResponsesForReprocess(exophoneID uint64, dateStr string) ([]models.Jo
 		WHERE jt.exophone_id = ?
 		  AND jr.response_type = 'CALLS'
 		  AND jr.http_status BETWEEN 200 AND 299
-		  AND (DATE(jt.started_at) = ? OR jt.transaction_id = CONCAT('BACKFILL-', ?, '-', ?))
+		  AND (
+		    (DATE(jt.started_at) = ? AND jt.transaction_id NOT LIKE 'BACKFILL-%')
+		    OR jt.transaction_id = CONCAT('BACKFILL-', ?, '-', ?)
+		  )
 		ORDER BY jt.started_at ASC`,
 		exophoneID, dateStr, exophoneID, dateStr,
 	).Scan(&responses)
