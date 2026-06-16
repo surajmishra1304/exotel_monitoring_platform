@@ -50,6 +50,6 @@ export const useExophoneCallAnalytics = (id: number, date?: string) =>
       }
     },
     enabled: id > 0,
-    refetchInterval: (!date || date === 'today') ? 60_000 : false,
-    staleTime:       (!date || date === 'today') ? 30_000  : Infinity,
+    refetchInterval: !date ? 60_000 : false,
+    staleTime:       !date ? 30_000 : Infinity,
   });

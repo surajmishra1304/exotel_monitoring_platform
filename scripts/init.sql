@@ -379,26 +379,9 @@ CREATE TABLE IF NOT EXISTS priority_config (
 
 -- Default priority polling frequencies
 INSERT INTO priority_config (priority, frequency_minutes, description, updated_by) VALUES
-    ('P0', 15,  'Critical VNs — polled every 15 minutes',  'SYSTEM'),
+    ('P0', 10,  'Critical VNs — polled every 10 minutes',  'SYSTEM'),
     ('P1', 30,  'High-priority VNs — polled every 30 min', 'SYSTEM'),
     ('P2', 60,  'Standard VNs — polled every hour',        'SYSTEM'),
     ('P3', 120, 'Low-priority VNs — polled every 2 hours', 'SYSTEM')
 ON DUPLICATE KEY UPDATE updated_at = NOW();
 
--- ============================================================
--- SEED DATA — Example Account + Exophone + Jobs
--- ============================================================
-
-INSERT INTO accounts (account_name, sid, api_key, api_token, subdomain, cluster, created_by)
-VALUES ('Demo Account', 'DEMO_SID_001', 'ENCRYPTED_KEY', 'ENCRYPTED_TOKEN', 'demo', 'in1', 'SYSTEM')
-ON DUPLICATE KEY UPDATE updated_at = NOW();
-
-INSERT INTO exophones (account_id, exophone_number, status, priority, monitoring_flag, cache_ttl, created_by)
-VALUES (1, '+911234567890', 'active', 'P0', 1, 900, 'SYSTEM')
-ON DUPLICATE KEY UPDATE updated_at = NOW();
-
-INSERT INTO monitoring_jobs (exophone_id, account_id, job_name, job_type, priority, frequency_minutes, timeout_seconds, retry_policy, next_run_at, created_by)
-VALUES
-  (1, 1, 'Heartbeat Monitor P0', 'HEARTBEAT', 'P0', 15, 30, '{"max_retries":3,"base_delay_ms":1000,"max_delay_ms":30000}', NOW(), 'SYSTEM'),
-  (1, 1, 'Calls Sync P0',        'CALLS',     'P0', 15, 60, '{"max_retries":3,"base_delay_ms":1000,"max_delay_ms":30000}', NOW(), 'SYSTEM'),
-  (1, 1, 'Active Streams P0',    'STREAMS',   'P0', 15, 30, '{"max_retries":3,"base_delay_ms":1000,"max_delay_ms":30000}', NOW(), 'SYSTEM');

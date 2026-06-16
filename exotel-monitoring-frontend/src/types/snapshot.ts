@@ -6,14 +6,14 @@ export interface CallMetricsSnapshot {
   total_calls: number;
   // Leg 1 (A-leg): inbound call to VN triggering the flow (app-based trigger / panel Leg 1)
   leg1_total: number;
-  leg1_drops: number;        // Leg1 completed AND duration <= 10s (routing/agent-side failure)
+  leg1_drops: number;        // completed + ConversationDuration=0 + Leg2Status="" (customer abandoned in IVR)
   leg1_drop_rate: number;    // leg1_drops / leg1_total * 100
   // Leg 2 (B-leg): outbound call FROM VN to agent/CX (the actual conversation)
   leg2_total: number;
-  leg2_drops: number;        // Leg2 completed AND duration <= 10s (CX didn't pick up / dropped early)
+  leg2_drops: number;        // completed + ConversationDuration=0 on Leg2 CDR (customer didn't answer)
   // Status breakdown across all legs
-  connected_calls: number;   // status=completed (answered)
-  dropped_calls: number;     // Leg2 drops (real customer-side drops)
+  connected_calls: number;   // ConversationDuration > 0 (both parties actually bridged)
+  dropped_calls: number;     // leg1_drops + leg2_drops (total drops across all legs)
   failed_calls: number;      // status=failed (network failure)
   no_answer_calls: number;   // status=no-answer (missed)
   busy_calls: number;        // status=busy

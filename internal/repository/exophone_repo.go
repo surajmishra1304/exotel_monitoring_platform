@@ -40,6 +40,18 @@ func GetExophonesByAccount(accountID uint64, page, limit int) ([]models.Exophone
 	return list, total, result.Error
 }
 
+// GetAllExophonesByAccount returns every non-deleted exophone for an account with no page cap.
+// Use this in internal loops (scheduler, snapshot refresh) where a LIMIT would silently
+// exclude exophones from computation.
+func GetAllExophonesByAccount(accountID uint64) ([]models.Exophone, error) {
+	var list []models.Exophone
+	result := database.DB.
+		Where("account_id = ? AND is_deleted = 0", accountID).
+		Order("priority ASC").
+		Find(&list)
+	return list, result.Error
+}
+
 // GetExophoneByID retrieves a single exophone.
 func GetExophoneByID(id uint64) (*models.Exophone, error) {
 	var e models.Exophone

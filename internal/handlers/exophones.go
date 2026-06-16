@@ -23,8 +23,10 @@ func parsePage(c *gin.Context) (int, int) {
 	if page < 1 {
 		page = 1
 	}
-	if limit < 1 || limit > 100 {
+	if limit < 1 {
 		limit = 20
+	} else if limit > 1000 {
+		limit = 1000
 	}
 	return page, limit
 }

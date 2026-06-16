@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	"exotel-monitoring-platform/internal/cache"
 	"exotel-monitoring-platform/internal/exotel"
 	"exotel-monitoring-platform/internal/metrics"
 	"exotel-monitoring-platform/internal/models"
@@ -158,8 +160,20 @@ func ReprocessExophoneSnapshot(c *gin.Context) {
 		return
 	}
 
+	// Register the deduplicated Sids so subsequent live CALLS jobs don't re-count them.
+	sidList := make([]string, len(allRecords))
+	for i, r := range allRecords {
+		sidList[i] = r.Sid
+	}
+	cache.AddCallSids(context.Background(), exophoneID, sidList)
+
 	// Refresh the account dashboard snapshot to reflect the corrected exophone data.
 	_ = repository.AccumulateAccountDashboardFromSnapshots(exophone.AccountID)
+
+	// Invalidate Redis cache so the next read reflects the reprocessed snapshot immediately.
+	ctx := c.Request.Context()
+	_ = cache.Delete(ctx, cache.MetricsKey(exophoneID))
+	_ = cache.Delete(ctx, cache.KeyDashboardSum)
 
 	c.JSON(http.StatusOK, gin.H{
 		"source":               source,

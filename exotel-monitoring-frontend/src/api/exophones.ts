@@ -73,3 +73,29 @@ export const getPriorityConfigs = () =>
 
 export const updatePriorityConfig = (priority: string, frequencyMinutes: number) =>
   client.put(`/api/v1/priority-config/${priority}`, { frequency_minutes: frequencyMinutes });
+
+export const toggleSkipCallLogs = (exophoneId: number, val: 0 | 1) =>
+  client.patch<{ exophone_id: number; skip_call_logs: number; message: string }>(
+    `/api/v1/exophones/${exophoneId}/skip-call-logs`,
+    { skip_call_logs: val },
+  );
+
+export interface ReprocessSnapshotResult {
+  source: string;
+  exophone_id: number;
+  exophone_number: string;
+  date: string;
+  unique_call_records: number;
+  total_calls: number;
+  connected_calls: number;
+  answer_rate_pct: string;
+  drop_rate_pct: string;
+  leg1_drop_rate_pct: string;
+}
+
+export const reprocessSnapshot = (exophoneId: number, date: string) =>
+  client.post<ReprocessSnapshotResult>(
+    `/api/v1/exophones/${exophoneId}/snapshot/reprocess`,
+    null,
+    { params: { date } },
+  );

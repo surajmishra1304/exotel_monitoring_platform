@@ -112,6 +112,7 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 	var callLogs []models.CallLog
 	var mets []models.Metric
 	var summary CallSummary
+	var leg1Connected int // tracks Leg1 CDRs with ConversationDuration > 0 for Panel mode correction
 
 	now := time.Now()
 
@@ -183,6 +184,9 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 			//   leg_number = 1 AND ConvDur=0 AND Leg2Status="" → agent didn't answer → Leg1 drop
 			if convDur > 0 {
 				summary.Connected++
+				if legNum == models.Leg1 {
+					leg1Connected++
+				}
 			} else if legNum == models.Leg2 {
 				// Panel mode: customer-side (Leg2) no-answer
 				summary.DroppedLeg2++
@@ -236,6 +240,14 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 		return callLogs, mets, summary
 	}
 
+	// Panel mode produces two CDRs per bridged call: one Leg1 (VN→agent) and one Leg2
+	// (VN→customer), both with ConversationDuration > 0. Without correction, Connected
+	// would be double-counted. Subtract the Leg1 count so Connected equals the number
+	// of unique calls where the customer was actually reached.
+	if summary.Leg2Total > 0 {
+		summary.Connected -= leg1Connected
+	}
+
 	summary.AvgDurationSec = float64(summary.TotalDurationSec) / float64(summary.Total)
 
 	// Panel-based (Leg2 records exist): denominator = Leg2Total.
@@ -254,8 +266,14 @@ func ProcessCallRecords(txnID string, job models.MonitoringJob, exophoneNumber s
 		summary.AnswerRate = float64(summary.Connected) / float64(rateDenom) * 100
 	}
 	summary.SuccessRate = summary.AnswerRate
-	// Leg1DropRate and Leg2DropRate always use Total as denominator for symmetry.
-	summary.Leg1DropRate = float64(summary.DroppedLeg1) / float64(summary.Total) * 100
+	// Leg1DropRate: drops per Leg1 call — consistent with AccumulateCallMetrics and the model definition.
+	// Falls back to Total when Leg1Total is zero (pure Leg2-only edge case, should not occur in practice).
+	if summary.Leg1Total > 0 {
+		summary.Leg1DropRate = float64(summary.DroppedLeg1) / float64(summary.Leg1Total) * 100
+	} else if summary.Total > 0 {
+		summary.Leg1DropRate = float64(summary.DroppedLeg1) / float64(summary.Total) * 100
+	}
+	// Leg2DropRate uses Total as denominator for cross-mode consistency.
 	summary.Leg2DropRate = float64(summary.DroppedLeg2) / float64(summary.Total) * 100
 
 	// Find peak hour.

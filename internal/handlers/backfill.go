@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
+	"exotel-monitoring-platform/internal/cache"
 	"exotel-monitoring-platform/internal/config"
 	"exotel-monitoring-platform/internal/exotel"
 	"exotel-monitoring-platform/internal/metrics"
@@ -233,7 +235,19 @@ func BackfillExophoneSnapshot(c *gin.Context) {
 			return
 		}
 
+		// Register all Sids in the Redis dedup set so subsequent live CALLS jobs
+		// on today's date don't double-count calls already covered by this backfill.
+		sidList := make([]string, len(allRecords))
+		for i, r := range allRecords {
+			sidList[i] = r.Sid
+		}
+		cache.AddCallSids(context.Background(), exophoneID, sidList)
+
 		_ = repository.AccumulateAccountDashboardFromSnapshots(acc.ID)
+
+		// Invalidate Redis cache so the next read reflects the backfilled snapshot.
+		cache.Delete(context.Background(), cache.MetricsKey(exophoneID)) //nolint:errcheck
+		cache.Delete(context.Background(), cache.KeyDashboardSum)        //nolint:errcheck
 
 		t := time.Now()
 		backfillMu.Lock()
@@ -503,7 +517,17 @@ func BulkBackfill(c *gin.Context) {
 						Leg2Canceled: summary.Leg2Canceled,
 					}
 					_ = repository.UpsertCallMetricsSnapshot(snap)
+
+					// Register all Sids so subsequent live CALLS jobs don't double-count these.
+					bulkSids := make([]string, len(allRecords))
+					for i, r := range allRecords {
+						bulkSids[i] = r.Sid
+					}
+					cache.AddCallSids(context.Background(), ep.ID, bulkSids)
+
 					_ = repository.AccumulateAccountDashboardFromSnapshots(acc.ID)
+					cache.Delete(context.Background(), cache.MetricsKey(ep.ID)) //nolint:errcheck
+					cache.Delete(context.Background(), cache.KeyDashboardSum)   //nolint:errcheck
 
 					bulk.mu.Lock()
 					bulk.Done++

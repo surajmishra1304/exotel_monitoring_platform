@@ -63,7 +63,7 @@ func runHourlySnapshotRefresh() {
 	}
 	for _, a := range accounts {
 		today := time.Now().Truncate(24 * time.Hour)
-		exophones, _, _ := repository.GetExophonesByAccount(a.ID, 1, 1000)
+		exophones, _ := repository.GetAllExophonesByAccount(a.ID)
 
 		var totalCalls, failedCalls, activeEx int
 		for _, ex := range exophones {

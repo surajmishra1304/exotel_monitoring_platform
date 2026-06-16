@@ -439,6 +439,7 @@ func executeCalls(ctx context.Context, txnID string, job models.MonitoringJob,
 			zap.Int("count", len(records)),
 			zap.Int("pages", callsResult.PagesFetched),
 		)
+		records = filterNewRecords(ctx, records, job.ExophoneID)
 		callLogs, mets, summary := metrics.ProcessCallRecords(txnID, job, exophoneNumber, records)
 		// Skip writing call_logs if either the global flag is on OR this exophone has skip_call_logs=1.
 		if !feature.SkipCallLogsWrite() && !exophoneSkipLogs {
@@ -488,13 +489,18 @@ func executeCalls(ctx context.Context, txnID string, job models.MonitoringJob,
 
 		// Update snapshots: optimised path skips call_logs queries entirely.
 		_ = snapshots.AccumulateCallMetrics(job.AccountID, job.ExophoneID, summary)
-		if feature.SkipCallLogsWrite() {
+		// Use snapshot-based accumulation when call_logs were not written — either because
+		// the global flag is on, or because this specific exophone has skip_call_logs=1.
+		// RecomputeAccountDashboardSnapshot reads from call_logs and would undercount
+		// any exophone whose rows were skipped.
+		if feature.SkipCallLogsWrite() || exophoneSkipLogs {
 			_ = repository.AccumulateAccountDashboardFromSnapshots(job.AccountID)
 		} else {
 			_ = repository.RecomputeAccountDashboardSnapshot(job.AccountID)
 		}
-		// Invalidate cached dashboard so next request reads fresh snapshot from DB.
+		// Invalidate cached snapshots so next request reads fresh data from DB.
 		_ = cache.Delete(ctx, cache.MetricsKey(job.ExophoneID))
+		_ = cache.Delete(ctx, cache.KeyDashboardSum)
 	}
 
 	return nil
@@ -582,6 +588,30 @@ func executeStreams(ctx context.Context, txnID string, job models.MonitoringJob,
 	}
 
 	return nil
+}
+
+// filterNewRecords removes records whose Sid was already registered today for this exophone.
+// This eliminates overlap-window double-counting in the accumulation path (AccumulateCallMetrics
+// has no per-Sid dedup; the 1-min overlap window causes the same calls to be counted twice without
+// this filter). Also absorbs the backfill-today race: Sids registered by an earlier backfill run
+// are already in the set and are silently skipped by subsequent live jobs.
+// Falls back to the full slice on any Redis error so no data is ever lost.
+func filterNewRecords(ctx context.Context, records []exotel.CallRecord, exophoneID uint64) []exotel.CallRecord {
+	if len(records) == 0 {
+		return records
+	}
+	sids := make([]string, len(records))
+	for i, r := range records {
+		sids[i] = r.Sid
+	}
+	isNew := cache.AddCallSids(ctx, exophoneID, sids)
+	out := make([]exotel.CallRecord, 0, len(records))
+	for i, r := range records {
+		if isNew[i] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // handleRetryExhausted fires a RETRY_EXHAUSTED alert when max retries are hit.

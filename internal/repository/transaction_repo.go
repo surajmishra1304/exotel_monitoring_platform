@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"exotel-monitoring-platform/internal/database"
@@ -59,14 +60,25 @@ func SaveCallLogs(logs []models.CallLog) error {
 	return nil
 }
 
+// mysqlEscape escapes a string value for safe interpolation into a MySQL single-quoted literal.
+// Doubles single quotes and escapes backslashes per the MySQL string literal rules.
+func mysqlEscape(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `'`, `''`)
+	return s
+}
+
 // buildIgnoreInsert constructs a single INSERT IGNORE statement for a batch of CallLog rows.
+// leg1_status and leg2_status are persisted so that RecomputeCallMetricsForDate and the
+// reprocess fallback path can correctly classify Leg1 vs Leg2 drops via the leg2_status field.
 func buildIgnoreInsert(batch []models.CallLog) string {
 	// Use raw SQL so we can specify INSERT IGNORE — GORM Clauses(OnConflict{DoNothing:true})
 	// generates INSERT INTO ... ON DUPLICATE KEY UPDATE which still touches rows; IGNORE is cheaper.
 	q := "INSERT IGNORE INTO call_logs " +
 		"(transaction_id,account_id,exophone_id,call_sid,parent_call_sid,leg_number," +
 		"call_from,call_to,status,direction," +
-		"duration_sec,conversation_duration,start_time,end_time,recording_url,created_at) VALUES "
+		"duration_sec,conversation_duration,start_time,end_time,recording_url," +
+		"leg1_status,leg2_status,created_at) VALUES "
 	now := "NOW()"
 	for i, cl := range batch {
 		if i > 0 {
@@ -80,12 +92,14 @@ func buildIgnoreInsert(batch []models.CallLog) string {
 		if cl.EndTime != nil {
 			endTime = "'" + cl.EndTime.Format("2006-01-02 15:04:05") + "'"
 		}
-		q += fmt.Sprintf("('%s',%d,%d,'%s','%s',%d,'%s','%s','%s','%s',%d,%d,%s,%s,'%s',%s)",
-			cl.TransactionID, cl.AccountID, cl.ExophoneID, cl.CallSID,
-			cl.ParentCallSID, cl.LegNumber,
-			cl.CallFrom, cl.CallTo, cl.Status, cl.Direction,
+		q += fmt.Sprintf("('%s',%d,%d,'%s','%s',%d,'%s','%s','%s','%s',%d,%d,%s,%s,'%s','%s','%s',%s)",
+			mysqlEscape(cl.TransactionID), cl.AccountID, cl.ExophoneID, mysqlEscape(cl.CallSID),
+			mysqlEscape(cl.ParentCallSID), cl.LegNumber,
+			mysqlEscape(cl.CallFrom), mysqlEscape(cl.CallTo),
+			mysqlEscape(cl.Status), mysqlEscape(cl.Direction),
 			cl.DurationSec, cl.ConversationDuration,
-			startTime, endTime, cl.RecordingURL, now,
+			startTime, endTime, mysqlEscape(cl.RecordingURL),
+			mysqlEscape(cl.Leg1Status), mysqlEscape(cl.Leg2Status), now,
 		)
 	}
 	return q

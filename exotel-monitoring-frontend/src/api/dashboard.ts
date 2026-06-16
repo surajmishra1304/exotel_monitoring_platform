@@ -8,7 +8,7 @@ export interface DashboardSummaryResponse {
 }
 
 export const getDashboardSummary = () =>
-  client.get<{ data: DashboardSummaryResponse }>('/api/v1/dashboard/summary');
+  client.get<DashboardSummaryResponse>('/api/v1/dashboard/summary');
 
 export interface CallAnalyticsResponse {
   source: string;

@@ -1,9 +1,11 @@
 package snapshots
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
+	"exotel-monitoring-platform/internal/cache"
 	"exotel-monitoring-platform/internal/logger"
 	"exotel-monitoring-platform/internal/metrics"
 	"exotel-monitoring-platform/internal/models"
@@ -47,6 +49,10 @@ func RefreshExophoneHealth(exophoneID, accountID uint64, txnID string) {
 		log.Error("failed to upsert health snapshot", zap.Error(err))
 		return
 	}
+
+	// Invalidate the health snapshot cache so the next read reflects the freshly
+	// written DB row instead of serving stale data for up to TTLHealthSnap (5 min).
+	_ = cache.Delete(context.Background(), cache.HealthSnapKey(exophoneID))
 
 	log.Debug("exophone health snapshot refreshed")
 }

@@ -34,8 +34,8 @@ const Transactions: React.FC = () => {
   // Build exophone number lookup.
   const { data: summary } = useDashboardSummary();
   const accountIds = (summary?.data ?? []).map((a) => a.account_id);
-  const { data: page1 } = useExophones(accountIds[0] ?? 0);
-  const { data: page2 } = useExophones(accountIds[1] ?? 0);
+  const { data: page1 } = useExophones(accountIds[0] ?? 0, 1, 100);
+  const { data: page2 } = useExophones(accountIds[1] ?? 0, 1, 100);
   const exophones1 = page1?.data ?? [];
   const exophones2 = page2?.data ?? [];
   const allExophones = useMemo(() => [...exophones1, ...exophones2], [exophones1, exophones2]);

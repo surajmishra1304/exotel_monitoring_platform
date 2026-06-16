@@ -14,6 +14,7 @@ import { useExophoneMetrics, useExophoneCallAnalytics } from '@/hooks/useExophon
 import { useActiveAlerts, useAcknowledgeAlert } from '@/hooks/useActiveAlerts';
 import { useExophoneById } from '@/hooks/useExophoneById';
 import { useDashboardSummary } from '@/hooks/useDashboardSummary';
+import { reprocessSnapshot, toggleSkipCallLogs } from '@/api/exophones';
 import HeartbeatBadge from '@/components/cards/HeartbeatBadge';
 import KpiCard from '@/components/cards/KpiCard';
 import SeverityTag from '@/components/common/SeverityTag';
@@ -85,18 +86,14 @@ const ExophoneDetail: React.FC = () => {
     setReprocessing(true);
     const date = selectedDate ? selectedDate.format('YYYY-MM-DD') : new Date().toISOString().slice(0, 10);
     try {
-      const res = await fetch(`/api/v1/exophones/${exophoneId}/snapshot/reprocess?date=${date}`, { method: 'POST' });
-      const body = await res.json();
-      if (!res.ok) {
-        message.error(body.error ?? 'Reprocess failed');
-      } else {
-        message.success(
-          `Reprocessed ${body.unique_call_records} unique calls → answer rate ${body.answer_rate_pct}%`
-        );
-        refetchCalls();
-      }
+      const res = await reprocessSnapshot(exophoneId, date);
+      const body = res.data;
+      message.success(
+        `Reprocessed ${body.unique_call_records} unique calls → answer rate ${body.answer_rate_pct}%`
+      );
+      refetchCalls();
     } catch {
-      message.error('Network error during reprocess');
+      // Axios interceptor already shows a notification.error for API failures.
     } finally {
       setReprocessing(false);
     }
@@ -109,20 +106,11 @@ const ExophoneDetail: React.FC = () => {
   const handleToggleSkipCallLogs = async (checked: boolean) => {
     setSavingSkip(true);
     try {
-      const res = await fetch(`/api/v1/exophones/${exophoneId}/skip-call-logs`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skip_call_logs: checked ? 1 : 0 }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        message.error(body.error ?? 'Failed to update skip_call_logs');
-      } else {
-        setSkipCallLogs(checked);
-        message.success(checked ? 'Call logs will be skipped for this exophone' : 'Call logs will be written for this exophone');
-      }
+      await toggleSkipCallLogs(exophoneId, checked ? 1 : 0);
+      setSkipCallLogs(checked);
+      message.success(checked ? 'Call logs will be skipped for this exophone' : 'Call logs will be written for this exophone');
     } catch {
-      message.error('Network error');
+      // Axios interceptor already shows a notification.error for API failures.
     } finally {
       setSavingSkip(false);
     }
