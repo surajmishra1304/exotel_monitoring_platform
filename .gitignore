@@ -1,5 +1,6 @@
 # Binaries
 server
+exotel-monitoring-server
 *.exe
 
 # PID files
