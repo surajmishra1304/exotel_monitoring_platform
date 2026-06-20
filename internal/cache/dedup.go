@@ -44,11 +44,12 @@ func AddCallSids(ctx context.Context, exophoneID uint64, sids []string) []bool {
 	key := CallDedupKey(exophoneID, today)
 
 	cmds := make([]*goredis.IntCmd, len(sids))
+	var expireCmd *goredis.BoolCmd
 	_, err := database.Redis.Pipelined(ctx, func(pipe goredis.Pipeliner) error {
 		for i, sid := range sids {
 			cmds[i] = pipe.SAdd(ctx, key, sid)
 		}
-		pipe.Expire(ctx, key, TTLCallDedup)
+		expireCmd = pipe.Expire(ctx, key, TTLCallDedup)
 		return nil
 	})
 	if err != nil {
@@ -57,6 +58,12 @@ func AddCallSids(ctx context.Context, exophoneID uint64, sids []string) []bool {
 			result[i] = true
 		}
 		return result
+	}
+
+	// If Expire returned false (key vanished between SAdd and Expire — extremely rare
+	// but possible under memory pressure), apply it directly so keys don't accumulate.
+	if expireCmd != nil && !expireCmd.Val() {
+		_ = database.Redis.Expire(ctx, key, TTLCallDedup)
 	}
 
 	for i, cmd := range cmds {

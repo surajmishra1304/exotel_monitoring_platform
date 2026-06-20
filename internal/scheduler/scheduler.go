@@ -55,23 +55,29 @@ func Stop() {
 
 func runHourlySnapshotRefresh() {
 	logger.Log.Info("running hourly snapshot refresh")
-	// Account-level dashboard snapshots are refreshed here.
 	accounts, err := repository.GetActiveAccounts()
 	if err != nil {
 		logger.Log.Error("snapshot refresh: failed to fetch accounts", zap.Error(err))
 		return
 	}
+
+	today := time.Now().Truncate(24 * time.Hour)
+
+	// Fetch all active alerts once outside the loop — avoids N redundant queries.
+	activeAlerts, _ := repository.GetActiveAlerts()
+
 	for _, a := range accounts {
-		today := time.Now().Truncate(24 * time.Hour)
 		exophones, _ := repository.GetAllExophonesByAccount(a.ID)
+
+		// Single batch query instead of one query per exophone.
+		snapsByID, _ := repository.GetCallMetricsSnapshotsByAccount(a.ID, today)
 
 		var totalCalls, failedCalls, activeEx int
 		for _, ex := range exophones {
 			if ex.Status == "active" {
 				activeEx++
 			}
-			snap, err := repository.GetCallMetricsSnapshot(ex.ID, today)
-			if err == nil {
+			if snap, ok := snapsByID[ex.ID]; ok {
 				totalCalls += snap.TotalCalls
 				failedCalls += snap.FailedCalls
 			}
@@ -82,7 +88,6 @@ func runHourlySnapshotRefresh() {
 			successRate = float64(totalCalls-failedCalls) / float64(totalCalls) * 100
 		}
 
-		activeAlerts, _ := repository.GetActiveAlerts()
 		alertCount := 0
 		for _, al := range activeAlerts {
 			if al.AccountID == a.ID {

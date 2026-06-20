@@ -113,6 +113,12 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 		Leg2Failed   int     `gorm:"column:leg2_failed"`
 		Leg2Canceled int     `gorm:"column:leg2_canceled"`
 	}
+	// Build a half-open range [dayStart, dayEnd) so MySQL can use the index on start_time.
+	// MySQL server is in IST, so date strings are interpreted as IST-local midnight — correct.
+	d, _ := time.Parse("2006-01-02", dateStr)
+	dayStart := dateStr + " 00:00:00"
+	dayEnd := d.AddDate(0, 0, 1).Format("2006-01-02") + " 00:00:00"
+
 	var a agg
 	err := database.DB.Raw(`
 		SELECT
@@ -143,8 +149,8 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 			SUM(leg_number = 2 AND status = 'failed')    AS leg2_failed,
 			SUM(leg_number = 2 AND status = 'canceled')  AS leg2_canceled
 		FROM call_logs
-		WHERE exophone_id = ? AND DATE(start_time) = ?`,
-		exophoneID, dateStr,
+		WHERE exophone_id = ? AND start_time >= ? AND start_time < ?`,
+		exophoneID, dayStart, dayEnd,
 	).Scan(&a).Error
 	if err != nil {
 		return err
@@ -155,9 +161,9 @@ func RecomputeCallMetricsForDate(accountID, exophoneID uint64, dateStr string) e
 	_ = database.DB.Raw(`
 		SELECT HOUR(start_time) AS h, COUNT(*) AS c
 		FROM call_logs
-		WHERE exophone_id = ? AND DATE(start_time) = ?
+		WHERE exophone_id = ? AND start_time >= ? AND start_time < ?
 		GROUP BY HOUR(start_time)`,
-		exophoneID, dateStr,
+		exophoneID, dayStart, dayEnd,
 	).Scan(&hourlyRows)
 
 	var dist [24]int
@@ -397,6 +403,40 @@ func GetAccountDashboardSnapshot(accountID uint64, date time.Time) (*models.Acco
 	return &s, result.Error
 }
 
+// GetCallMetricsSnapshotsByAccount returns all call_metrics_snapshots for an account on a given
+// date, keyed by exophone_id. Replaces per-exophone queries with a single batched lookup.
+func GetCallMetricsSnapshotsByAccount(accountID uint64, date time.Time) (map[uint64]*models.CallMetricsSnapshot, error) {
+	var rows []models.CallMetricsSnapshot
+	result := database.DB.
+		Where("account_id = ? AND snapshot_date = ?", accountID, date.Format("2006-01-02")).
+		Find(&rows)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	m := make(map[uint64]*models.CallMetricsSnapshot, len(rows))
+	for i := range rows {
+		m[rows[i].ExophoneID] = &rows[i]
+	}
+	return m, nil
+}
+
+// GetAllAccountDashboardSnapshots returns all account_dashboard_snapshots for a given date,
+// keyed by account_id. Replaces per-account queries with a single batched lookup.
+func GetAllAccountDashboardSnapshots(date time.Time) (map[uint64]*models.AccountDashboardSnapshot, error) {
+	var rows []models.AccountDashboardSnapshot
+	result := database.DB.
+		Where("snapshot_date = ?", date.Format("2006-01-02")).
+		Find(&rows)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	m := make(map[uint64]*models.AccountDashboardSnapshot, len(rows))
+	for i := range rows {
+		m[rows[i].AccountID] = &rows[i]
+	}
+	return m, nil
+}
+
 // GetExophoneHealthSnapshot returns the health snapshot for a given exophone.
 func GetExophoneHealthSnapshot(exophoneID uint64) (*models.ExophoneHealthSnapshot, error) {
 	var s models.ExophoneHealthSnapshot
@@ -512,9 +552,12 @@ func GetCallLogsForReprocess(exophoneID uint64, dateStr string) ([]models.CallLo
 	if dateStr == "" {
 		dateStr = time.Now().Format("2006-01-02")
 	}
+	d, _ := time.Parse("2006-01-02", dateStr)
+	dayStart := dateStr + " 00:00:00"
+	dayEnd := d.AddDate(0, 0, 1).Format("2006-01-02") + " 00:00:00"
 	var logs []models.CallLog
 	result := database.DB.
-		Where("exophone_id = ? AND DATE(start_time) = ?", exophoneID, dateStr).
+		Where("exophone_id = ? AND start_time >= ? AND start_time < ?", exophoneID, dayStart, dayEnd).
 		Order("start_time ASC").
 		Find(&logs)
 	return logs, result.Error

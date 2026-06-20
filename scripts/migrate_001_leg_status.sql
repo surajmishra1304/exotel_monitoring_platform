@@ -35,6 +35,7 @@ ALTER TABLE call_metrics_snapshot
   ADD COLUMN IF NOT EXISTS leg2_no_answer  INT          NOT NULL DEFAULT 0    AFTER leg1_failed,
   ADD COLUMN IF NOT EXISTS leg2_busy       INT          NOT NULL DEFAULT 0    AFTER leg2_no_answer,
   ADD COLUMN IF NOT EXISTS leg2_failed     INT          NOT NULL DEFAULT 0    AFTER leg2_busy,
-  ADD COLUMN IF NOT EXISTS leg2_canceled   INT          NOT NULL DEFAULT 0    AFTER leg2_failed;
+  ADD COLUMN IF NOT EXISTS leg2_canceled   INT          NOT NULL DEFAULT 0    AFTER leg2_failed,
+  ADD COLUMN IF NOT EXISTS leg_breakdown   JSON         NULL                  AFTER leg2_canceled;
 
 SELECT 'migration 001 complete' AS status;

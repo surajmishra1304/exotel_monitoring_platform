@@ -365,6 +365,40 @@ func MergeLegBreakdown(existing, incoming string) string {
 	return string(b)
 }
 
+// MergeWithBreakdownMap merges an in-memory breakdown map into an existing JSON string.
+// Avoids the double-marshal overhead of calling LegBreakdownJSON then MergeLegBreakdown
+// when the incoming data is already available as a map (e.g. in live accumulation).
+func MergeWithBreakdownMap(existing string, incoming map[string]map[string]int) string {
+	if len(incoming) == 0 {
+		return existing
+	}
+	merged := make(map[string]map[string]int)
+	if existing != "" {
+		var m map[string]map[string]int
+		if err := json.Unmarshal([]byte(existing), &m); err == nil {
+			for l1, l2map := range m {
+				merged[l1] = make(map[string]int)
+				for l2, cnt := range l2map {
+					merged[l1][l2] = cnt
+				}
+			}
+		}
+	}
+	for l1, l2map := range incoming {
+		if merged[l1] == nil {
+			merged[l1] = make(map[string]int)
+		}
+		for l2, cnt := range l2map {
+			merged[l1][l2] += cnt
+		}
+	}
+	if len(merged) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(merged)
+	return string(b)
+}
+
 // HourlyDistributionJSON encodes the 24-element hourly array to a JSON string for DB storage.
 func HourlyDistributionJSON(dist [24]int) string {
 	slice := dist[:]

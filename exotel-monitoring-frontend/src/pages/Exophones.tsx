@@ -20,6 +20,81 @@ import type { ExophoneHealthSnapshot, CallMetricsSnapshot } from '@/types/snapsh
 
 const { Title, Text } = Typography;
 const PAGE_SIZE = 20;
+const DEFAULT_FREQ: Record<string, number> = { P0: 15, P1: 30, P2: 60, P3: 60 };
+
+interface PriorityEditorProps {
+  exophone: Exophone;
+  changePriority: (
+    params: { exophoneId: number; priority: string; frequencyMinutes: number },
+    opts: { onSuccess: () => void }
+  ) => void;
+  updatingPriority: boolean;
+}
+
+const PriorityEditor: React.FC<PriorityEditorProps> = ({ exophone, changePriority, updatingPriority }) => {
+  const [open, setOpen] = useState(false);
+  const [selPriority, setSelPriority] = useState(exophone.priority);
+  const [freq, setFreq] = useState<number>(DEFAULT_FREQ[exophone.priority] ?? 60);
+
+  const handleSave = () => {
+    changePriority(
+      { exophoneId: exophone.id, priority: selPriority, frequencyMinutes: freq },
+      { onSuccess: () => setOpen(false) },
+    );
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      trigger="click"
+      title="Edit Priority & Frequency"
+      content={
+        <div style={{ width: 220 }}>
+          <Form layout="vertical" size="small">
+            <Form.Item label="Priority" style={{ marginBottom: 8 }}>
+              <Select
+                value={selPriority}
+                onChange={(v) => { setSelPriority(v); setFreq(DEFAULT_FREQ[v]); }}
+                options={[
+                  { value: 'P0', label: 'P0 — Critical (default 15 min)' },
+                  { value: 'P1', label: 'P1 — High (default 30 min)' },
+                  { value: 'P2', label: 'P2 — Medium (default 60 min)' },
+                  { value: 'P3', label: 'P3 — Low (default 60 min)' },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item label="Check every (minutes)" style={{ marginBottom: 12 }}>
+              <InputNumber
+                min={1}
+                max={1440}
+                value={freq}
+                onChange={(v) => setFreq(v ?? DEFAULT_FREQ[selPriority])}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Button
+              type="primary"
+              size="small"
+              loading={updatingPriority}
+              onClick={handleSave}
+              block
+            >
+              Save
+            </Button>
+          </Form>
+        </div>
+      }
+    >
+      <Tag
+        color={PRIORITY_COLOR[exophone.priority] ?? 'default'}
+        style={{ cursor: 'pointer' }}
+      >
+        {exophone.priority}
+      </Tag>
+    </Popover>
+  );
+};
 
 const Exophones: React.FC = () => {
   const navigate = useNavigate();
@@ -114,73 +189,6 @@ const Exophones: React.FC = () => {
     });
   };
 
-  const DEFAULT_FREQ: Record<string, number> = { P0: 15, P1: 30, P2: 60, P3: 60 };
-
-  const PriorityEditor: React.FC<{ exophone: Exophone }> = ({ exophone }) => {
-    const [open, setOpen] = useState(false);
-    const [selPriority, setSelPriority] = useState(exophone.priority);
-    const [freq, setFreq] = useState<number>(DEFAULT_FREQ[exophone.priority] ?? 60);
-
-    const handleSave = () => {
-      changePriority(
-        { exophoneId: exophone.id, priority: selPriority, frequencyMinutes: freq },
-        { onSuccess: () => setOpen(false) },
-      );
-    };
-
-    return (
-      <Popover
-        open={open}
-        onOpenChange={setOpen}
-        trigger="click"
-        title="Edit Priority & Frequency"
-        content={
-          <div style={{ width: 220 }}>
-            <Form layout="vertical" size="small">
-              <Form.Item label="Priority" style={{ marginBottom: 8 }}>
-                <Select
-                  value={selPriority}
-                  onChange={(v) => { setSelPriority(v); setFreq(DEFAULT_FREQ[v]); }}
-                  options={[
-                    { value: 'P0', label: 'P0 — Critical (default 15 min)' },
-                    { value: 'P1', label: 'P1 — High (default 30 min)' },
-                    { value: 'P2', label: 'P2 — Medium (default 60 min)' },
-                    { value: 'P3', label: 'P3 — Low (default 60 min)' },
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item label="Check every (minutes)" style={{ marginBottom: 12 }}>
-                <InputNumber
-                  min={1}
-                  max={1440}
-                  value={freq}
-                  onChange={(v) => setFreq(v ?? DEFAULT_FREQ[selPriority])}
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-              <Button
-                type="primary"
-                size="small"
-                loading={updatingPriority}
-                onClick={handleSave}
-                block
-              >
-                Save
-              </Button>
-            </Form>
-          </div>
-        }
-      >
-        <Tag
-          color={PRIORITY_COLOR[exophone.priority] ?? 'default'}
-          style={{ cursor: 'pointer' }}
-        >
-          {exophone.priority}
-        </Tag>
-      </Popover>
-    );
-  };
-
   const perfRows = perfPaged?.data ?? [];
   const perfTotal = perfPaged?.total ?? 0;
 
@@ -232,7 +240,7 @@ const Exophones: React.FC = () => {
     {
       title: 'Priority',
       key: 'priority',
-      render: (_: unknown, row: Exophone) => <PriorityEditor exophone={row} />,
+      render: (_: unknown, row: Exophone) => <PriorityEditor exophone={row} changePriority={changePriority} updatingPriority={updatingPriority} />,
     },
     {
       title: 'Heartbeat',

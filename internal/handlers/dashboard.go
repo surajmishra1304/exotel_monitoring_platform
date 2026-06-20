@@ -53,6 +53,10 @@ func DashboardSummary(c *gin.Context) {
 	}
 
 	today := time.Now().Truncate(24 * time.Hour)
+
+	// Single batch query instead of one query per account.
+	snapsByAccountID, _ := repository.GetAllAccountDashboardSnapshots(today)
+
 	var results []gin.H
 
 	for _, acc := range accounts {
@@ -69,8 +73,7 @@ func DashboardSummary(c *gin.Context) {
 			"snapshot_date":    today.Format("2006-01-02"),
 		}
 
-		snap, snapErr := repository.GetAccountDashboardSnapshot(acc.ID, today)
-		if snapErr == nil {
+		if snap, ok := snapsByAccountID[acc.ID]; ok {
 			row["total_exophones"] = snap.TotalExophones
 			row["active_exophones"] = snap.ActiveExophones
 			row["total_calls"] = snap.TotalCalls
